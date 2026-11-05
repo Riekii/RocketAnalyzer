@@ -5,10 +5,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { NextResponse } from "next/server";
-import { MAX_REPLAY_BYTES, normalizeReplay, ReplayValidationError } from "@/lib/replay";
+import { MAX_REPLAY_BYTES, type Replay } from "@/lib/replay";
+import { hasSameOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 90;
 const execute = promisify(execFile);
 let parsing = false;
 
@@ -20,8 +21,7 @@ function error(message: string, status: number) {
 }
 
 export async function POST(request: Request) {
-  const origin = request.headers.get("origin");
-  if (origin && origin !== new URL(request.url).origin) {
+  if (!hasSameOrigin(request)) {
     return error("No se permiten subidas desde otro origen.", 403);
   }
   if (parsing) return error("Hay otra repetición en proceso. Inténtalo de nuevo en unos segundos.", 429);
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
       form = await new Request(request.url, {
         method: "POST",
         headers: { "Content-Type": request.headers.get("content-type") ?? "" },
-        body,
+        body: new Uint8Array(body),
       }).formData();
     } catch (cause) {
       console.warn("[replay:invalid-form]", cause);
@@ -79,15 +79,19 @@ export async function POST(request: Request) {
     let stdout: string;
     try {
       const result = await execute(process.execPath, [
+        "--max-old-space-size=1536",
         path.join(process.cwd(), "scripts", "parse-replay.mjs"),
         replayPath,
+        path.basename(file.name),
+        randomUUID(),
       ], {
-        timeout: 20_000,
-        maxBuffer: 8 * 1024 * 1024,
+        timeout: 60_000,
+        maxBuffer: 48 * 1024 * 1024,
         windowsHide: true,
         encoding: "utf8",
       });
       stdout = result.stdout;
+      if (result.stderr) console.warn("[replay:parser-warning]", result.stderr);
     } catch (cause) {
       console.error("[replay:parser]", cause);
       return error(
@@ -95,14 +99,13 @@ export async function POST(request: Request) {
         422,
       );
     }
-    const parsed: unknown = JSON.parse(stdout);
-    const replay = normalizeReplay(parsed, path.basename(file.name), randomUUID());
+    // The isolated process validates and normalizes the replay before emitting this internal JSON.
+    const replay: Replay = JSON.parse(stdout);
+    if (!replay.players?.length || !Array.isArray(replay.telemetry?.samples)) {
+      throw new Error("El lector no ha devuelto un informe completo.");
+    }
     return NextResponse.json(replay, { headers: { "Cache-Control": "no-store" } });
   } catch (cause) {
-    if (cause instanceof ReplayValidationError) {
-      console.warn("[replay:invalid]", cause.message);
-      return error(cause.message, 422);
-    }
     console.error("[replay:analyze]", cause);
     return error("Ha ocurrido un error al procesar el archivo. Revisa la consola del servidor y vuelve a intentarlo.", 500);
   } finally {

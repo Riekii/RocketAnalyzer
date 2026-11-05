@@ -5,6 +5,10 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/analyze": [
       "./scripts/parse-replay.mjs",
+      "./.local/rrrocket/rrrocket.exe",
+      "./src/lib/replay.ts",
+      "./src/lib/network.ts",
+      "./src/lib/telemetry.ts",
       "./node_modules/@kant/node-boxcars/**/*",
       "./node_modules/@kant/node-boxcars-win32-x64-msvc/**/*",
       "./node_modules/cbor-x/**/*",

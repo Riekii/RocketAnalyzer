@@ -1,3 +1,5 @@
+import { emptyTelemetry, type Telemetry } from "./telemetry.ts";
+
 export const MAX_REPLAY_BYTES = 32 * 1024 * 1024;
 export const MAX_REPLAY_LABEL = "32 MB";
 
@@ -36,6 +38,7 @@ export interface Replay {
   goals: Goal[];
   warnings: string[];
   demo: boolean;
+  telemetry: Telemetry;
 }
 
 export class ReplayValidationError extends Error {}
@@ -173,6 +176,7 @@ export function normalizeReplay(raw: unknown, filename: string, id: string): Rep
     goals,
     warnings: [...new Set(warnings)],
     demo: false,
+    telemetry: emptyTelemetry("No hay datos espaciales en este informe."),
   };
 }
 

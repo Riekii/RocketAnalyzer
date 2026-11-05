@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Rocket Analyzer — Cada partida, una oportunidad",
+  title: "Rocket Analyzer",
   description: "Analiza tus repeticiones de Rocket League. Estadísticas reales, comparativas de jugadores y consejos para tu próxima partida.",
 };
 
