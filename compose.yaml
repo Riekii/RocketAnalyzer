@@ -3,7 +3,7 @@ services:
     build: .
     restart: unless-stopped
     environment:
-      PUBLIC_ORIGIN: https://${DOMAIN:?Define DOMAIN en el archivo .env}
+      PUBLIC_ORIGIN: ${SCHEME:-https}://${DOMAIN:?Define DOMAIN en el archivo .env}
     # Only reachable from the server itself; Caddy publishes the site.
     ports:
       - "127.0.0.1:3000:3000"
@@ -23,7 +23,7 @@ services:
     depends_on:
       - app
     environment:
-      DOMAIN: ${DOMAIN}
+      DOMAIN: ${SCHEME:-https}://${DOMAIN}
     ports:
       - "80:80"
       - "443:443"

@@ -54,6 +54,17 @@ La imagen compila rrrocket 0.11.8 nativamente para la arquitectura del servidor 
 
 La aplicación escucha solo en `127.0.0.1:3000` del servidor, y Caddy publica el sitio en `https://DOMAIN` con un límite de subida de 34 MB y 120 s de tiempo de espera. `PUBLIC_ORIGIN` (definido por `compose.yaml` a partir de `DOMAIN`) es necesario porque el proxy reenvía por HTTP: sin él, las subidas devuelven 403.
 
+### Acceso por IP en la red local (sin HTTPS)
+
+No necesitas dominio ni certificado. Configura `.env` con la IP local de tu servidor:
+
+```dotenv
+DOMAIN=192.168.1.214
+SCHEME=http
+```
+
+Con el archivo `compose.yaml` actualizado, ejecuta `docker compose up -d --no-build` y abre <http://192.168.1.214> (no HTTPS). No hace falta recompilar la imagen existente. Apache u otros servicios no deben ocupar el puerto 80. `SCHEME` usa `https` por defecto si se omite; también determina el origen permitido para las subidas. Usa HTTP solo en una red local de confianza.
+
 - **Actualizar:** `git pull` y `docker compose up -d --build`.
 - **Contraseña:** descomenta `basic_auth` en `Caddyfile`, genera el hash con `docker compose run --rm caddy caddy hash-password` y ejecuta `docker compose restart caddy`.
 - **Si ya usas Nginx en 80/443:** arranca solo `docker compose up -d --build app` y apunta Nginx a `http://127.0.0.1:3000` con `client_max_body_size 34m;` y `proxy_read_timeout 120s;`.
