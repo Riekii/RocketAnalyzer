@@ -15,10 +15,18 @@ export interface BoostPickup {
   position: Position | null;
   size: "small" | "large" | "unknown";
 }
+export interface Demolition {
+  time: number;
+  attackerId: string | null;
+  victimId: string | null;
+  cause: "player" | "self" | "goal";
+}
 export interface Telemetry {
   samples: PositionSample[];
   pickups: BoostPickup[];
   pickupsObserved: boolean;
+  demolitions: Demolition[];
+  demolitionsObserved: boolean;
   standardField: boolean;
   sampleInterval: number;
   warnings: string[];
@@ -50,13 +58,26 @@ export const BOOST_PADS: BoostPad[] = PAD_COORDINATES.map(([x, y, large], index)
 
 export function emptyTelemetry(warning: string): Telemetry {
   return {
-    samples: [], pickups: [], pickupsObserved: false, standardField: false,
+    samples: [], pickups: [], pickupsObserved: false, demolitions: [], demolitionsObserved: false, standardField: false,
     sampleInterval: SAMPLE_INTERVAL, warnings: [warning],
   };
 }
 
 export function distance(a: Position, b: Position): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+export function playerDistances(sample: PositionSample | undefined, players: Player[]) {
+  const points = sample?.players ?? [];
+  return points.flatMap((first, index) => {
+    const player = players.find((member) => member.id === first.id);
+    if (!player) return [];
+    return points.slice(index + 1).flatMap((second) => {
+      const other = players.find((member) => member.id === second.id);
+      return other ? [{ first, second, team: player.team === other.team ? player.team : null,
+        units: distance(first, second) }] : [];
+    });
+  });
 }
 
 export function nearestPad(position: Position): BoostPad | null {

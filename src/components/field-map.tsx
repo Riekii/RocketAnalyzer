@@ -1,11 +1,11 @@
 import { memo, useId } from "react";
 import type { Replay } from "@/lib/replay";
 import {
-  BOOST_PADS, FIELD, HEAT_COLUMNS, HEAT_ROWS, distance,
+  BOOST_PADS, FIELD, HEAT_COLUMNS, HEAT_ROWS, playerDistances,
   type Position, type PositionSample, type BoostPickup,
 } from "@/lib/telemetry";
 
-export const PLAYER_COLORS = ["#6bb8ff", "#ffae6c", "#87e6d0", "#ffdf85", "#bbacff", "#ff92ba", "#d0e9ff", "#ffdad0"];
+export const TEAM_COLORS = ["#6bb8ff", "#ffae6c"] as const;
 
 function coordinates(point: Position): [number, number] {
   return [35 + (point.y + FIELD.halfLength) / (FIELD.halfLength * 2) * 500,
@@ -23,10 +23,7 @@ export const FieldMap = memo(function FieldMap({ replay, sample, heat, selectedI
 }) {
   const clip = useId();
   const maximum = Math.max(0, ...(heat ?? []));
-  const selected = sample?.players.find((point) => point.id === selectedId);
-  const roster = replay.players.find((player) => player.id === selectedId);
-  const teammates = sample?.players.filter((point) => point.id !== selectedId &&
-    replay.players.some((player) => player.id === point.id && player.team === roster?.team)) ?? [];
+  const pairs = !heat ? playerDistances(sample, replay.players).filter((pair) => pair.team !== null) : [];
   return (
     <svg className={`field-map ${small ? "mini-field" : ""}`} viewBox="0 0 570 456" role="img"
       aria-label={heat ? "Mapa de calor: más intensidad indica más tiempo observado en esa zona." : "Posiciones en el instante seleccionado. Los números corresponden a los jugadores de la tabla."}>
@@ -60,12 +57,13 @@ export const FieldMap = memo(function FieldMap({ replay, sample, heat, selectedI
             <title>{pad.id} · {pad.large ? "100" : "12"} de capacidad · ubicación de referencia, no disponibilidad</title>
           </circle>;
         })}
-        {selected && !heat && teammates.map((point) => {
-          const [x1, y1] = coordinates(selected), [x2, y2] = coordinates(point);
-          return <g key={point.id}>
-            <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#d7e5ef" strokeDasharray="5 6" opacity=".65" />
+        {pairs.map(({ first, second, team, units }) => {
+          const [x1, y1] = coordinates(first), [x2, y2] = coordinates(second);
+          return <g key={`${first.id}-${second.id}`} className="distance-pair">
+            <title>{replay.players.find((player) => player.id === first.id)?.name} ↔ {replay.players.find((player) => player.id === second.id)?.name}</title>
+            <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={TEAM_COLORS[team ?? 0]} strokeDasharray="5 6" opacity=".65" />
             <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 7} fill="#e1ecf5" stroke="#11202d" strokeWidth="3" paintOrder="stroke" fontSize="12" textAnchor="middle">
-              {(distance(selected, point) / 100).toFixed(1)} m
+              {(units / 100).toFixed(1)} m
             </text>
           </g>;
         })}
@@ -83,7 +81,7 @@ export const FieldMap = memo(function FieldMap({ replay, sample, heat, selectedI
               if (onSelect && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onSelect(point.id); }
             }} style={{ cursor: onSelect ? "pointer" : undefined }}>
             <circle cx={cx} cy={cy} r={point.id === selectedId ? 13 : 10}
-              fill={PLAYER_COLORS[index % PLAYER_COLORS.length]} stroke={point.id === selectedId ? "#fff" : "#0e1520"} strokeWidth="3" />
+              fill={TEAM_COLORS[player.team]} stroke={point.id === selectedId ? "#fff" : "#0e1520"} strokeWidth="3" />
             <text x={cx} y={cy + 4} textAnchor="middle" fill="#09121d" fontSize="11" fontWeight="700">{index + 1}</text>
             <title>{player.name} · {point.boost ?? "N/D"} % turbo · z {(point.z / 100).toFixed(1)} m</title>
           </g>;

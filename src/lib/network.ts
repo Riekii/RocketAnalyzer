@@ -54,7 +54,9 @@ export function extractTelemetry(raw: unknown, players: Player[], map: string): 
   const objects = root.objects;
   const actors = new Map<number, Actor>();
   const telemetry: Telemetry = {
-    samples: [], pickups: [], pickupsObserved: false, standardField: isStandardField(map),
+    samples: [], pickups: [], pickupsObserved: false, demolitions: [],
+    demolitionsObserved: objects.some((name) => typeof name === "string" && /:ReplicatedDemolish/.test(name)),
+    standardField: isStandardField(map),
     sampleInterval: SAMPLE_INTERVAL, warnings: [],
   };
   const warnings = new Set<string>();
@@ -69,14 +71,16 @@ export function extractTelemetry(raw: unknown, players: Player[], map: string): 
     const id = actorId(value);
     return id !== null && typeof objects[id] === "string" ? objects[id] : "";
   };
-  const identify = (car: Actor): Player | null => {
-    const pri = car.pri === undefined ? undefined : actors.get(car.pri);
-    const side = car.team ?? pri?.team ?? (pri?.teamActor === undefined ? undefined : actors.get(pri.teamActor)?.team);
+  const identifyPri = (pri: Actor | undefined, team?: Team): Player | null => {
+    const side = team ?? pri?.team ?? (pri?.teamActor === undefined ? undefined : actors.get(pri.teamActor)?.team);
     if (!pri?.name || side === undefined) return null;
     const matches = players.filter((player) => player.name === pri.name && player.team === side);
     if (matches.length > 1) warnings.add("Hay nombres duplicados en un equipo: se omiten sus posiciones para no atribuirlas a otra persona.");
     return matches.length === 1 ? matches[0] : null;
   };
+  const identify = (car: Actor): Player | null =>
+    identifyPri(car.pri === undefined ? undefined : actors.get(car.pri), car.team);
+  const lastDemolition = new Map<number, number>();
   const fresh = (actor: Actor, time: number) =>
     actor.position !== undefined && actor.positionTime !== undefined &&
     (actor.sleeping === true || time - actor.positionTime <= 1);
@@ -96,10 +100,18 @@ export function extractTelemetry(raw: unknown, players: Player[], map: string): 
       warnings.add("El análisis espacial se ha limitado a una hora de grabación.");
       break;
     }
+    // A demolition can detach the victim's PRI earlier in the very same frame.
+    const frameIdentities = new Map<number, Player>();
+    for (const [id, actor] of actors) {
+      if (actor.pri === undefined) continue;
+      const player = identify(actor);
+      if (player) frameIdentities.set(id, player);
+    }
     if (Array.isArray(frame.deleted_actors)) {
       for (const value of frame.deleted_actors) {
         const id = actorId(value);
         if (id !== null) {
+          lastDemolition.delete(id);
           actors.delete(id);
           for (const actor of actors.values()) {
             if (actor.vehicle === id) { actor.vehicle = undefined; actor.boost = undefined; }
@@ -114,6 +126,7 @@ export function extractTelemetry(raw: unknown, players: Player[], map: string): 
         const row = record(value);
         const id = actorId(row?.actor_id);
         if (!row || id === null) continue;
+        frameIdentities.delete(id);
         const kind = objectName(row.object_id);
         const actor: Actor = { kind };
         const side = /(?:Team|TeamInfo)([01])(?:\D|$)/.exec(kind)?.[1];
@@ -125,6 +138,7 @@ export function extractTelemetry(raw: unknown, players: Player[], map: string): 
       }
     }
     const pendingPickups: { padActor: number; instigator: number }[] = [];
+    const pendingDemolitions: { data: Record<string, unknown>; extended: boolean }[] = [];
     if (Array.isArray(frame.updated_actors)) {
       for (const value of frame.updated_actors) {
         const row = record(value);
@@ -133,6 +147,11 @@ export function extractTelemetry(raw: unknown, players: Player[], map: string): 
         const actor = id === null ? undefined : actors.get(id);
         if (!row || !actor || !attr || id === null) continue;
         const property = objectName(row.object_id);
+        if (/:ReplicatedDemolish/.test(property)) {
+          const data = record(attr.DemolishExtended ?? attr.DemolishFx ?? attr.Demolish);
+          if (data) pendingDemolitions.push({ data, extended: attr.DemolishExtended !== undefined });
+          else warnings.add("Formato de demolición no reconocido; algunos eventos pueden faltar.");
+        }
         if (property.endsWith(":PlayerName") && typeof attr.String === "string") actor.name = attr.String.trim();
         if (property.endsWith(":BallTouches") && typeof attr.Int === "number" &&
           Number.isSafeInteger(attr.Int) && attr.Int >= 0) actor.ballTouches = attr.Int;
@@ -180,6 +199,31 @@ export function extractTelemetry(raw: unknown, players: Player[], map: string): 
           }
           actor.pickupState = state;
         }
+      }
+      for (const { data, extended } of pendingDemolitions) {
+        const victimActor = extended ? reference(data.victim)
+          : data.victim_flag === true ? actorId(data.victim) : null;
+        if (victimActor === null || time <= 1) continue;
+        const previous = lastDemolition.get(victimActor);
+        if (previous !== undefined && time - previous < .5) continue;
+        lastDemolition.set(victimActor, time);
+        const attackerActor = extended ? reference(data.attacker)
+          : data.attacker_flag === true ? actorId(data.attacker) : null;
+        const attackerPri = extended ? reference(data.attacker_pri) : null;
+        const victimCar = actors.get(victimActor);
+        const attackerCar = attackerActor === null ? undefined : actors.get(attackerActor);
+        const victim = (victimCar ? identify(victimCar) : null) ?? frameIdentities.get(victimActor) ?? null;
+        const attacker = (attackerPri === null ? null : identifyPri(actors.get(attackerPri))) ??
+          (attackerCar ? identify(attackerCar) : null) ??
+          (attackerActor === null ? null : frameIdentities.get(attackerActor)) ?? null;
+        const cause = extended && reference(data.goal_explosion_owner) !== null ? "goal"
+          : data.self_demolish === true || (extended && reference(data.self_demo) !== null) ? "self" : "player";
+        if (!victim || (cause === "player" && !attacker)) {
+          warnings.add("Algunas demoliciones tienen participantes sin identificar.");
+        }
+        telemetry.demolitions.push({
+          time, attackerId: cause === "player" ? attacker?.id ?? null : null, victimId: victim?.id ?? null, cause,
+        });
       }
     }
     for (const pickup of pendingPickups) {

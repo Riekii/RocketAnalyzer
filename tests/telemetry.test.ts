@@ -5,7 +5,7 @@ import { extractTelemetry, isStandardField } from "../src/lib/network.ts";
 import { getImprovementSummary } from "../src/lib/analysis.ts";
 import {
   analyzeTelemetry, BOOST_PADS, distance, emptyTelemetry, FIELD, heatCell, heatmapFor,
-  nearestPad, sampleSignals, type PositionSample,
+  nearestPad, playerDistances, sampleSignals, type PositionSample,
 } from "../src/lib/telemetry.ts";
 import type { Replay } from "../src/lib/replay.ts";
 
@@ -22,6 +22,8 @@ const objects = [
   "TAGame.GameEvent_Soccar_TA:bBallHasBeenHit",
   "TAGame.Ball_TA:ReplicatedExplosionData", "Engine.GameReplicationInfo:bMatchIsOver",
   "TAGame.PRI_TA:BallTouches",
+  "TAGame.Car_TA:ReplicatedDemolishExtended",
+  "TAGame.Car_TA:ReplicatedDemolish",
 ];
 function update(id: number, property: string, attribute: Record<string, unknown>) {
   return { actor_id: id, object_id: objects.indexOf(property), attribute };
@@ -166,6 +168,90 @@ test("los datos de red ausentes son explícitos y no rellenan trayectorias", () 
   assert.equal(telemetry.samples.length, 0);
   assert.equal(telemetry.pickupsObserved, false);
   assert.ok(telemetry.warnings[0].includes("No hay fotogramas"));
+});
+
+test("extrae demos con atacante PRI, victima y sin duplicar la misma demolicion", () => {
+  const raw = fixture();
+  const data = {
+    attacker_pri: { active: true, actor: 10 },
+    attacker: { active: true, actor: 999 },
+    victim: { active: true, actor: 22 },
+    self_demo: { active: false, actor: -1 }, self_demolish: false,
+    goal_explosion_owner: { active: false, actor: -1 },
+  };
+  for (const index of [10, 11]) raw.network_frames.frames[index].updated_actors.push(
+    update(22, "TAGame.Car_TA:ReplicatedDemolishExtended", { DemolishExtended: data }),
+  );
+  raw.network_frames.frames[10].updated_actors.unshift(
+    update(22, "Engine.Pawn:PlayerReplicationInfo", { ActiveActor: { active: false, actor: -1 } }),
+  );
+  const telemetry = extractTelemetry(raw, demoReplay.players, "cs_p");
+  assert.equal(telemetry.demolitionsObserved, true);
+  assert.deepEqual(telemetry.demolitions, [{
+    time: 2, attackerId: demoReplay.players[0].id, victimId: demoReplay.players[2].id, cause: "player",
+  }]);
+});
+
+test("soporta demos antiguas y no atribuye autodemos ni explosiones de gol a un atacante", () => {
+  const raw = fixture();
+  raw.network_frames.frames[10].updated_actors.push(update(22, "TAGame.Car_TA:ReplicatedDemolish", {
+    Demolish: { attacker_flag: true, attacker: 20, victim_flag: true, victim: 22 },
+  }));
+  for (const [index, cause] of [[15, "self"], [20, "goal"]] as const) {
+    raw.network_frames.frames[index].updated_actors.push(update(23, "TAGame.Car_TA:ReplicatedDemolishExtended", {
+      DemolishExtended: {
+        attacker_pri: { active: true, actor: 10 }, victim: { active: true, actor: 23 },
+        self_demolish: cause === "self", goal_explosion_owner: { active: cause === "goal", actor: 10 },
+      },
+    }));
+  }
+  const telemetry = extractTelemetry(raw, demoReplay.players, "cs_p");
+  assert.deepEqual(telemetry.demolitions.map((event) => [event.cause, event.attackerId]),
+    [["player", demoReplay.players[0].id], ["self", null], ["goal", null]]);
+  assert.deepEqual(extractTelemetry({}, demoReplay.players, "cs_p").demolitions, []);
+});
+
+test("una desaparicion no inventa una demo y una identidad desconocida se conserva como desconocida", () => {
+  const raw = fixture();
+  raw.network_frames.frames[10].deleted_actors.push(20);
+  raw.network_frames.frames[15].updated_actors.push(update(22, "TAGame.Car_TA:ReplicatedDemolishExtended", {
+    DemolishExtended: { victim: { active: true, actor: 22 }, attacker_pri: { active: true, actor: 999 } },
+  }));
+  const telemetry = extractTelemetry(raw, demoReplay.players, "cs_p");
+  assert.equal(telemetry.demolitions.length, 1);
+  assert.equal(telemetry.demolitions[0].attackerId, null);
+  assert.ok(telemetry.warnings.some((warning) => warning.includes("demoliciones")));
+});
+
+test("una demo no hereda la identidad de un actor destruido y reutilizado en el mismo fotograma", () => {
+  const raw = fixture();
+  const frame = raw.network_frames.frames[10];
+  frame.deleted_actors.push(22);
+  frame.new_actors.push({ actor_id: 22, object_id: 3 });
+  frame.updated_actors.push(update(22, "TAGame.Car_TA:ReplicatedDemolishExtended", {
+    DemolishExtended: { victim: { active: true, actor: 22 }, attacker_pri: { active: true, actor: 10 } },
+  }));
+  const telemetry = extractTelemetry(raw, demoReplay.players, "cs_p");
+  assert.equal(telemetry.demolitions.length, 1);
+  assert.equal(telemetry.demolitions[0].victimId, null);
+});
+
+test("mide todas las parejas sin duplicados: triangulos completos en 3v3 y distancias entre rivales", () => {
+  const players = Array.from({ length: 6 }, (_, index) => ({
+    ...demoReplay.players[0], id: `player-${index}`, team: index < 3 ? 0 as const : 1 as const,
+  }));
+  const sample: PositionSample = {
+    time: 0, active: true, ball: null,
+    players: players.map((player, index) => ({ id: player.id, x: index * 100, y: 0, z: 17, boost: 50 })),
+  };
+  const pairs = playerDistances(sample, players);
+  assert.equal(pairs.length, 15);
+  assert.equal(pairs.filter((pair) => pair.team === 0).length, 3);
+  assert.equal(pairs.filter((pair) => pair.team === 1).length, 3);
+  assert.equal(pairs.filter((pair) => pair.team === null).length, 9);
+  assert.equal(pairs.find((pair) => pair.first.id === players[0].id && pair.second.id === players[2].id)?.units, 200);
+  assert.equal(playerDistances({ ...sample, players: sample.players.slice(0, 2) }, players).length, 1);
+  assert.deepEqual(playerDistances(undefined, players), []);
 });
 
 test("extrae el contador real de toques del PRI sin inventar ceros ausentes", () => {

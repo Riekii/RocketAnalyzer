@@ -50,6 +50,17 @@ test("no interpola huecos, fases, respawns ni jugadores ausentes", () => {
   assert.equal(interpolatedSample([{ ...before, players: [] }, sample(.2, 0)], .1, .2)?.players.length, 0);
 });
 
+test("permite buscar hacia delante y atras entre muestras y no conserva posiciones en huecos", () => {
+  const samples = [sample(0, -800), sample(.2, -400), sample(1, 0), sample(1.2, 400)];
+  assert.ok(Math.abs(interpolatedSample(samples, 1.1, .2)!.players[0].x - 200) < 1e-8);
+  assert.equal(interpolatedSample(samples, .05, .2)?.players[0].x, -700);
+  const gap = interpolatedSample(samples, .8, .2);
+  assert.equal(gap?.time, .8);
+  assert.deepEqual(gap?.players, []);
+  assert.equal(gap?.ball, null);
+  assert.equal(interpolatedSample(samples, 1, .2)?.players[0].x, 0);
+});
+
 test("pondera turbo y aire por tiempo activo y excluye paredes", () => {
   const samples = [sample(0, 0), sample(.2, 0), sample(.4, 4000), sample(.6, 0), sample(.8, 0)];
   samples[0].players[0].boost = 0;

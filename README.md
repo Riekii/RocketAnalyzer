@@ -1,6 +1,6 @@
 # Rocket Analyzer
 
-Web en español para analizar archivos `.replay` de Rocket League. Vista compacta para PC **1920 × 1080**: todos los jugadores, posiciones con control temporal, mapas de calor y señales tácticas en el mismo espacio. El resumen de qué mejorar permanece al final.
+Web en español para analizar archivos `.replay` de Rocket League. Vista compacta para PC **1920 × 1080**: todos los jugadores, posiciones con control temporal, mapas de calor y estadísticas. Eventos de posibles errores, boost y demoliciones en pestañas; sin consejos automáticos.
 
 ## Requisitos
 
@@ -36,7 +36,7 @@ npm run build
 npm start
 ```
 
-La aplicación arranca con un **ejemplo ficticio claramente identificado**. Arrastra una repetición o pulsa **Subir repetición** para sustituirlo por datos reales.
+La aplicación arranca vacía, sin partidos ficticios. Arrastra una repetición o pulsa **Subir replay**, arriba a la derecha. Una pantalla de carga bloquea las interacciones mientras se reciben y preparan los datos. Si falla la carga, se muestra el error y se conservan los datos anteriores.
 
 ## Encontrar tus repeticiones
 
@@ -51,17 +51,20 @@ Si Documentos está sincronizado con OneDrive, busca esa misma carpeta dentro de
 ## Funcionalidades
 
 - Subida de un archivo cada vez, hasta **32 MiB** (etiquetado como 32 MB en la interfaz).
-- Marcador oficial, título, mapa interno, fecha guardada y duración aproximada de la grabación.
+- Cabecera compacta con marcador y fecha a la izquierda; subida a la derecha. Conserva título, mapa interno y duración aproximada de la grabación sin una segunda tarjeta de resultado.
 - Puntos, goles, asistencias, paradas, tiros y conversión de tiros por jugador.
 - Tabla de todos los jugadores con turbo y distancia al compañero más cercano en el instante seleccionado, y recogidas de pads grandes, pequeños y sin tipo de toda la grabación.
-- Campo en planta, balón y jugadores numerados; selecciona una fila, miniatura o jugador en el campo para ver su análisis.
+- Campo en planta, balón y jugadores numerados en azul o naranja según su equipo; las insignias de la tabla y miniaturas usan esos mismos colores. Selecciona una fila, miniatura o jugador en el campo para ver sus datos.
+- El campo dibuja todas las parejas de cada equipo, no solo las del jugador seleccionado: tres líneas por equipo en 3v3. Una matriz muestra además todas las distancias entre rivales, con todas las parejas (15 en 3v3), en metros en planta. Las posiciones ausentes son N/D.
 - Reproducción fluida con `requestAnimationFrame`, interpolación visual entre muestras de **5 Hz** y velocidades **×1, ×1,5, ×2 y ×3**. El reloj usa tiempo transcurrido para evitar acumular retrasos; cambiar de velocidad conserva el instante. No se interpolan huecos mayores de 1,5 intervalos, fases diferentes ni desplazamientos incompatibles con movimiento continuo (2300 uu/s para coches y 6500 uu/s para balón, con margen de 150 uu).
+- Deslizador continuo en segundos, disponible tanto en pausa como durante reproducción, con ratón, táctil y teclado (flechas: 0,1 s; Mayús + flechas: 1 s; RePág/AvPág: 10 s; Inicio/Fin: extremos). Al tocarlo se pausa inmediatamente y se cancela el fotograma pendiente para que no sobrescriba el instante elegido. Se pueden consultar instantes intermedios sin reproducir antes la partida; los huecos sin observaciones no mantienen posiciones antiguas.
 - Miniaturas de calor para todos los jugadores y mapa ampliado para el jugador elegido, de toda la grabación o los últimos 10 segundos.
-- Eventos de recogida de turbo con salto al instante correspondiente. El tipo y la ubicación del pad se estiman por proximidad cuando se verifica un campo estándar.
-- Situaciones persistentes a revisar: proximidad entre compañeros, aislamiento, posible doble presión y falta de cobertura. Reglas orientativas, no una valoración universal de rotación.
-- Resumen **En qué mejorar** siempre al final, con hasta dos recomendaciones para el jugador elegido. Prioriza señales espaciales con suficiente muestra; si no hay evidencia suficiente, lo indica sin inventar defectos.
+- Tres pestañas debajo de los gráficos: **Errores**, **Boost** y **Demos**. Errores y boost corresponden al jugador seleccionado; demos incluye todos los jugadores. Cada evento permite saltar al instante exacto y pausa la reproducción.
+- La pestaña Errores reúne posibles fallos al balón y señales tácticas sostenidas al menos 2 s: proximidad en suelo (<7 m), aislamiento (>40 m), doble presión cerca de un balón bajo (<10 m) y falta de cobertura (nadie al menos 5 m por detrás del balón en campo propio). Se excluyen pausas identificadas, saques, equipos incompletos y mapas no verificados. Son indicios a revisar, no errores confirmados ni recomendaciones.
+- Boost contiene los eventos de recogida. El tipo y la ubicación del pad se estiman por proximidad cuando se verifica un campo estándar.
+- Demos muestra los eventos replicados `Demolish`, `DemolishFx` y `DemolishExtended`, con atacante, víctima y totales observados hechos/recibidos por jugador. Se distingue autodemolición y explosión de gol, sin contarlas como demos hechas por un atacante. Se conserva la identidad anterior al fotograma si la víctima pierde el PRI en ese mismo fotograma; no se reutiliza para coches nuevos. Se omiten snapshots del primer segundo y duplicados de una misma víctima en menos de 0,5 s. No se infieren demos por desapariciones, ni a partir del marcador; participantes desconocidos se etiquetan explícitamente. Requiere volver a subir partidas cargadas antes de incorporar esta lectura.
 - Selector con los últimos ocho informes de la sesión, en memoria, también accesible en móvil.
-- Exportación del informe actual a JSON. El informe de ejemplo conserva `demo: true`.
+- Exportación del informe actual a JSON desde la cabecera.
 - Navegación con teclado, estados de carga, mensajes de error y adaptación a móvil.
 - Tabla ampliada debajo de los campos, para todos los jugadores: turbo medio ponderado, segundos y porcentaje sin turbo (≤1 %) y lleno (≥99 %), pads, tiempo aéreo estimado, aproximaciones y posibles fallos con acceso al instante. Las métricas se calculan sobre las muestras originales, nunca sobre la interpolación.
 
@@ -77,7 +80,7 @@ Se leen la **cabecera y los fotogramas de red** mediante rrrocket 0.11.8, que ut
 
 Si no está instalado el lector actualizado, se utiliza [node-boxcars](https://github.com/Justkant/node-boxcars) / boxcars 0.10.11, con decodificación CBOR mediante `cbor-x`. Ese lector antiguo puede fallar en los primeros fotogramas de partidas recientes; ejecuta `npm.cmd run parser:setup` si solo aparece el marcador. node-boxcars también permite recuperar la cabecera cuando falla la lectura de red.
 
-Si el lector no puede analizar la red pero sí la cabecera, devuelve el marcador con una **advertencia explícita**: no hay mapas ni evaluación táctica. El ejemplo ficticio inicial no incluye trayectorias y no se utiliza para simular una lectura de red real.
+Si el lector no puede analizar la red pero sí la cabecera, devuelve el marcador con una **advertencia explícita**: no hay mapas ni posiciones. Nunca se utilizan trayectorias ficticias como sustituto de una lectura de red real.
 
 - La precisión es `goles / tiros × 100`, redondeada al entero más cercano. Si no hay tiros, se muestra **N/D**, no 0 %.
 - Los datos ausentes o inválidos se mantienen como **N/D**. Los totales de un equipo tampoco se muestran si faltan componentes. El marcador oficial no se reconstruye sumando goles de jugadores, ya que puede haber abandonos o reconexiones.
@@ -87,32 +90,17 @@ Si el lector no puede analizar la red pero sí la cabecera, devuelve el marcador
 - El turbo se normaliza desde el byte replicado (0–255) a 0–100 %. Una subida de turbo **no se inventa como recogida de un pad**: se usan eventos `Pickup` / `PickupNew` con instigador. Se excluyen snapshots iniciales del primer segundo y estados duplicados. Las recogidas pueden ser incompletas si faltan eventos o identidad; no se garantiza un contador oficial.
 - El evento confirma la recogida; el pad se estima si hay una posición reciente a menos de 350 uu de un pad estándar y altura inferior a 300 uu. Si no, el tipo queda desconocido. «12/100» es la capacidad de un pad pequeño/grande, no el turbo neto ganado. Los puntos del campo son referencias de ubicación, no indicadores de disponibilidad.
 - Cada mapa de calor acumula tiempo observado por celda, no el número de fotogramas. Se excluyen pausas identificadas y se recortan huecos entre muestras. Las miniaturas usan escalas independientes: sirven para comparar zonas, no cantidades absolutas. Se proyecta también el juego aéreo sobre el suelo.
-- Solo se dibuja el campo y se aplican reglas tácticas cuando el nombre interno del mapa pertenece a la lista de geometrías estándar verificadas. En otros mapas los datos espaciales siguen en el JSON, pero el mapa y la valoración se indican como no disponibles.
-- Los consejos son reglas sobre **una única partida**, no resultados de IA. La regla de conversión usa un 30 % como referencia de la herramienta con al menos cuatro tiros; no es una media de jugadores profesionales. El volumen de tiros, las asistencias y las paradas no bastan para juzgar decisiones o nivel.
+- Solo se dibuja el campo cuando el nombre interno del mapa pertenece a la lista de geometrías estándar verificadas. En otros mapas los datos espaciales siguen en el JSON, pero el mapa se indica como no disponible.
+- No se muestran recomendaciones ni una nota de rotación. Las señales de doble presión y cobertura aparecen únicamente como posibles errores en su pestaña, con criterios explícitos. Se mantienen los datos, las distancias y las estimaciones etiquetadas (tiempo aéreo y posibles fallos).
 - No se calcula una nota de rotación ni se infiere intención, rango, mecánicas o decisiones correctas. Tampoco se reproduce vídeo ni se calcula turbo neto consumido/ganado. La lectura de cabecera de respaldo no verifica el CRC ni garantiza la integridad de la red. Versiones nuevas pueden requerir actualizar el lector.
 - No hay cuentas, base de datos, integración con ballchasing ni almacenamiento permanente. Recargar la página vacía el historial.
 
-### Criterios tácticos
-
-Se evalúan únicamente muestras con juego activo identificado (`bBallHasBeenHit`), pasados dos segundos desde su activación, sin gol ni fin de partido identificado, lejos del centro (radio de 350 uu) y con todos los compañeros presentes. En 1v1 no se evalúa separación ni rotación. Si faltan fases o compañeros, no se presenta una conclusión favorable por defecto.
-
-Una señal debe mantenerse **al menos dos segundos continuos** para contribuir a los porcentajes y a la lista de situaciones:
-
-| Señal | Regla de esta herramienta |
-|---|---|
-| Muy juntos | Dos compañeros en el suelo (altura < 300 uu) a menos de 700 uu |
-| Aislado | Jugador a más de 4000 uu del compañero más cercano |
-| Posible doble presión | Dos compañeros en el suelo a menos de 1000 uu del balón, también bajo |
-| Sin cobertura | Balón en campo propio (más de 500 uu desde el centro) sin compañero al menos 500 uu por detrás del balón hacia su propia portería |
-
-Estos umbrales son **heurísticas**, no promedios competitivos ni normas que haya que cumplir en todas las jugadas. La tabla muestra distancias instantáneas y las métricas tácticas porcentajes sobre el tiempo evaluable. Las señales del instante son candidatas; solo las sostenidas aparecen en el historial. No detectar una señal no demuestra que la rotación sea correcta.
-
-El resumen prioriza cobertura, doble presión, proximidad y aislamiento cuando hay al menos 20 segundos evaluables, una señal suma al menos 3 segundos y representa al menos el 5 % del tiempo evaluable. También sugiere revisar rutas de pads si, con al menos 20 segundos de turbo observado, se pasó un 40 % o más con turbo inferior al 20 %.
+La distancia media al compañero conserva el filtro de muestras con equipo completo y juego activo identificado, a más de 350 uu del centro y en mapa estándar. Las distancias instantáneas se muestran siempre que haya posiciones y un compañero disponible. Ninguna distancia se interpreta como una decisión correcta o incorrecta.
 
 ## Arquitectura y privacidad
 
 1. El navegador envía el archivo a `POST /api/analyze`, en el mismo servidor.
-2. El endpoint limita el cuerpo recibido, valida extensión y tamaño, y crea una carpeta temporal con nombre aleatorio.
+2. El endpoint limita el cuerpo recibido, con un plazo de subida de 30 segundos, valida extensión y tamaño, y crea una carpeta temporal con nombre aleatorio. Una subida incompleta no reserva el lector; solo la petición que adquiere la reserva puede liberarla.
 3. Un proceso Node separado ejecuta el lector nativo, valida el encabezado y reduce los fotogramas a muestras y eventos. Límite de 60 segundos, heap de V8 de 1536 MiB y 48 MiB de salida. El heap no limita toda la memoria nativa: no es un aislamiento de sistema operativo.
 4. El servidor devuelve el informe y elimina la carpeta temporal en `finally`. Si la limpieza falla, queda registrada en la consola del servidor.
 5. El navegador conserva únicamente los informes de la sesión en memoria.
@@ -149,6 +137,15 @@ $env:REPLAY_TEST_FILE = 'C:\ruta\a\partida.replay'
 npm.cmd test
 ```
 
-La prueba comprueba posiciones y movimiento de todos los jugadores, balón, turbo, recogidas, fases activas y mapas de calor. Sin esa variable se omite únicamente la prueba de integración.
+La prueba comprueba posiciones y movimiento de todos los jugadores, balón, turbo, recogidas, fases activas y mapas de calor. Sin esa variable se omiten las pruebas que necesitan una repetición local.
+
+Con el servidor ya arrancado en `127.0.0.1:3000`, puedes validar también que una subida incompleta no bloquee otro análisis y que termine en HTTP 408 tras 30 segundos:
+
+```powershell
+$env:REPLAY_UPLOAD_TEST = '1'
+node --test tests\upload.test.ts
+```
+
+Esta comprobación requiere también `REPLAY_TEST_FILE` y no arranca ningún servidor.
 
 Proyecto independiente, no afiliado a Psyonix, Epic Games ni ballchasing.

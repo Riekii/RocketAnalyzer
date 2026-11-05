@@ -1,27 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Replay } from "@/lib/replay";
 import { formatTime } from "@/lib/replay";
 import {
-  distance, heatmapFor, sampleSignals, TACTICAL_LABELS, type SpatialAnalysis,
+  distance, heatmapFor, playerDistances, TACTICAL_LABELS, type SpatialAnalysis,
 } from "@/lib/telemetry";
-import { FieldMap, PLAYER_COLORS } from "./field-map";
-import { Icon } from "./icon";
+import { FieldMap, TEAM_COLORS } from "./field-map";
 import { interpolatedSample, playbackTime, sampleIndexAt } from "@/lib/playback";
 import { detailedStats } from "@/lib/detailed-stats";
 
 const percentage = (seconds: number, total: number) => total > 0 ? `${Math.round(seconds / total * 100)} %` : "N/D";
 const meters = (units: number | null) => units === null ? "N/D" : `${(units / 100).toFixed(1)} m`;
 
-export function SpatialWorkspace({ replay, analysis, selectedId, onSelect }: {
-  replay: Replay; analysis: SpatialAnalysis; selectedId: string; onSelect: (id: string) => void;
+export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loading = false }: {
+  replay: Replay; analysis: SpatialAnalysis; selectedId: string; onSelect: (id: string) => void; loading?: boolean;
 }) {
   const [time, setTime] = useState(0);
   const clock = useRef(0);
+  const animation = useRef<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [heatScope, setHeatScope] = useState<"match" | "recent">("match");
+  const [eventTab, setEventTab] = useState<"errors" | "boost" | "demos">("errors");
+  const tabsId = useId();
   const samples = replay.telemetry.samples;
   const index = sampleIndexAt(samples, time);
   const observedSample = samples[index];
@@ -29,9 +31,15 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect }: {
   const details = useMemo(() => detailedStats(replay), [replay]);
   const selected = replay.players.find((player) => player.id === selectedId) ?? replay.players[0];
   const stats = analysis.players[selectedId];
-  const signals = sample ? sampleSignals(sample, replay.players, replay.telemetry.standardField) : [];
-  const events = analysis.events.filter((event) => event.playerIds.includes(selectedId));
-  const pickups = replay.telemetry.pickups.filter((pickup) => pickup.playerId === selectedId);
+  const pickups = useMemo(() => replay.telemetry.pickups.filter((pickup) => pickup.playerId === selectedId), [replay, selectedId]);
+  const errors = useMemo(() => [
+    ...analysis.events.filter((event) => event.playerIds.includes(selectedId)).map((event) => ({
+      time: event.start, label: TACTICAL_LABELS[event.kind], duration: `${(event.end - event.start).toFixed(1)} s`,
+    })),
+    ...details[selectedId].possibleMisses.map((time) => ({ time, label: "Posible fallo al balón", duration: "" })),
+  ].sort((a, b) => a.time - b.time), [analysis, details, selectedId]);
+  const demolitions = replay.telemetry.demolitions ?? [];
+  const distances = playerDistances(sample, replay.players);
   const positions = new Map(sample?.players.map((point) => [point.id, point]));
   const currentHeat = useMemo(() => {
     if (heatScope === "match" || !observedSample) return analysis.heatmaps[selectedId];
@@ -39,21 +47,29 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect }: {
   }, [heatScope, observedSample, samples, selectedId, analysis, replay.telemetry.sampleInterval]);
 
   useEffect(() => {
-    if (!playing || samples.length < 2) return;
+    if (!playing || loading || samples.length < 2) return;
     const start = performance.now();
     const from = clock.current;
     const end = samples[samples.length - 1].time;
-    let frame: number;
     function tick(now: number) {
       const next = playbackTime(from, now - start, speed, end);
       clock.current = next;
       setTime(next);
       if (next >= end) setPlaying(false);
-      else frame = requestAnimationFrame(tick);
+      else animation.current = requestAnimationFrame(tick);
     }
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [playing, speed, samples]);
+    animation.current = requestAnimationFrame(tick);
+    return () => {
+      if (animation.current !== null) cancelAnimationFrame(animation.current);
+      animation.current = null;
+    };
+  }, [playing, speed, samples, loading]);
+
+  function pause() {
+    if (animation.current !== null) cancelAnimationFrame(animation.current);
+    animation.current = null;
+    setPlaying(false);
+  }
 
   function setPosition(next: number) {
     clock.current = next;
@@ -61,9 +77,8 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect }: {
   }
 
   function seek(time: number) {
-    const next = samples.findIndex((point) => point.time >= time);
-    setPosition(samples[next < 0 ? Math.max(0, samples.length - 1) : next]?.time ?? 0);
-    setPlaying(false);
+    pause();
+    setPosition(Math.max(samples[0]?.time ?? 0, Math.min(time, samples.at(-1)?.time ?? 0)));
   }
 
   return (
@@ -86,7 +101,7 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect }: {
               const row = analysis.players[player.id];
               return <tr key={player.id} className={selectedId === player.id ? "selected-row" : ""}>
                 <th scope="row"><button className="player-name" onClick={() => onSelect(player.id)} aria-pressed={selectedId === player.id}>
-                  <span className="player-number" style={{ background: PLAYER_COLORS[number % PLAYER_COLORS.length] }}>{number + 1}</span>
+                  <span className="player-number" style={{ background: TEAM_COLORS[player.team] }}>{number + 1}</span>
                   <span className="roster-name">{player.name}<small className={player.team === 0 ? "text-blue" : "text-orange"}>{player.team === 0 ? "Azul" : "Naranja"}</small></span>
                 </button></th>
                 <td>{player.score ?? "N/D"}</td><td>{player.goals ?? "N/D"}</td><td>{player.assists ?? "N/D"}</td><td>{player.saves ?? "N/D"}</td><td>{player.shots ?? "N/D"}</td>
@@ -100,21 +115,32 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect }: {
         </div>
         <div className="player-heatmaps" aria-label="Mapas de calor de todos los jugadores">
           {replay.players.map((player, number) => <button key={player.id} className={`mini-heat ${selectedId === player.id ? "selected" : ""}`} onClick={() => onSelect(player.id)} aria-pressed={selectedId === player.id}>
-            <span><i style={{ background: PLAYER_COLORS[number % PLAYER_COLORS.length] }}>{number + 1}</i>{player.name}</span>
+            <span><i style={{ background: TEAM_COLORS[player.team] }}>{number + 1}</i>{player.name}</span>
             {analysis.players[player.id].trackedSeconds > 0 && replay.telemetry.standardField ? <FieldMap replay={replay} heat={analysis.heatmaps[player.id]} selectedId={player.id} small /> : <span className="no-mini">{replay.telemetry.standardField ? "Sin posiciones" : "Mapa no disponible"}</span>}
           </button>)}
         </div>
         <div className="spatial-statistics">
-          <h3>{selected.name} · durante el juego evaluable</h3>
+          <h3>{selected.name} · datos observados</h3>
           <dl>
             <div><dt>Distancia media al compañero</dt><dd>{meters(stats.meanDistance)}</dd></div>
-            <div><dt>Muy juntos (&lt; 7 m)</dt><dd>{percentage(stats.closeSeconds, stats.evaluatedSeconds)}</dd></div>
-            <div><dt>Aislado (&gt; 40 m)</dt><dd>{percentage(stats.farSeconds, stats.evaluatedSeconds)}</dd></div>
-            <div><dt>Posible doble presión</dt><dd>{percentage(stats.pressureSeconds, stats.evaluatedSeconds)}</dd></div>
-            <div><dt>Falta de cobertura</dt><dd>{percentage(stats.coverageSeconds, stats.evaluatedSeconds)}</dd></div>
             <div><dt>Tiempo con turbo &lt; 20 %</dt><dd>{percentage(stats.lowBoostSeconds, stats.boostSeconds)}</dd></div>
           </dl>
-          <p className="note">{Math.round(stats.trackedSeconds)} s con posiciones · {Math.round(stats.evaluatedSeconds)} s evaluables. Distancias en planta, 100 uu ≈ 1 m.</p>
+          <p className="note">{Math.round(stats.trackedSeconds)} s con posiciones. Turbo y distancia de la tabla: instante elegido. Pads: total observado · G grande / P pequeño / ? sin tipo.</p>
+        </div>
+        <div className="distance-matrix table-scroll" tabIndex={0} role="region" aria-label="Distancias entre todos los jugadores">
+          <table>
+            <caption>Distancias entre todos · metros en planta · instante elegido</caption>
+            <thead><tr><th scope="col">Jugador</th>{replay.players.map((player, number) => <th key={player.id} scope="col" title={player.name} style={{ color: TEAM_COLORS[player.team] }}>{number + 1}</th>)}</tr></thead>
+            <tbody>{replay.players.map((player, number) => <tr key={player.id}>
+              <th scope="row"><span style={{ color: TEAM_COLORS[player.team] }}>{number + 1}</span> {player.name}</th>
+              {replay.players.map((other) => {
+                const pair = distances.find(({ first, second }) => (first.id === player.id && second.id === other.id) ||
+                  (first.id === other.id && second.id === player.id));
+                return <td key={other.id}>{player.id === other.id ? "—"
+                  : replay.telemetry.standardField && pair ? (pair.units / 100).toFixed(1) : "N/D"}</td>;
+              })}
+            </tr>)}</tbody>
+          </table>
         </div>
       </section>
 
@@ -122,7 +148,7 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect }: {
         <div className="section-heading"><h2 id="field-title">Campo y mapa de calor</h2><span className="note">{selected.name}</span></div>
         <div className="fields-grid">
           <div className="field-box">
-            <h3>Posiciones · {sample ? `${formatTime(sample.time)}.${Math.floor(sample.time % 1 * 10)}` : "N/D"}</h3>
+            <h3>Posiciones · {samples.length ? `${formatTime(time)}.${Math.floor(time % 1 * 10)}` : "N/D"}</h3>
             {sample?.players.length && replay.telemetry.standardField ? <FieldMap replay={replay} sample={sample} selectedId={selectedId} pickups={replay.telemetry.pickups} onSelect={onSelect} />
               : <div className="no-field">{!replay.telemetry.standardField && samples.length ? "Geometría de campo no verificada." : "Sin posiciones en este instante."}<br />No se inventan posiciones.</div>}
           </div>
@@ -133,43 +159,96 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect }: {
         </div>
         <div className="playback">
           <button className="button" disabled={!samples.length} aria-label={playing ? "Pausar" : "Reproducir posiciones"} onClick={() => {
-            if (!playing && index >= samples.length - 1) setPosition(samples[0]?.time ?? 0);
-            setPlaying((previous) => !previous);
+            if (playing) pause();
+            else {
+              if (time >= (samples.at(-1)?.time ?? 0)) setPosition(samples[0]?.time ?? 0);
+              setPlaying(true);
+            }
           }}>{playing ? "Pausa" : "Reproducir"}</button>
-          <input type="range" min={0} max={Math.max(0, samples.length - 1)} step={1} value={index} disabled={!samples.length}
-            aria-label="Instante de la repetición" aria-valuetext={sample ? `${sample.time.toFixed(1)} segundos` : "Sin datos"}
-            onChange={(event) => { setPosition(samples[Number(event.target.value)]?.time ?? 0); setPlaying(false); }} />
+          <input type="range" min={samples[0]?.time ?? 0} max={samples.at(-1)?.time ?? 0} step="any" value={time} disabled={!samples.length}
+            aria-label="Instante de la repetición" aria-valuetext={samples.length ? `${time.toFixed(2)} segundos` : "Sin datos"}
+            onPointerDown={pause}
+            onKeyDown={(event) => {
+              const changes: Record<string, number> = {
+                ArrowRight: event.shiftKey ? 1 : .1, ArrowUp: event.shiftKey ? 1 : .1,
+                ArrowLeft: event.shiftKey ? -1 : -.1, ArrowDown: event.shiftKey ? -1 : -.1,
+                PageUp: 10, PageDown: -10,
+              };
+              if (event.key === "Home" || event.key === "End" || event.key in changes) {
+                event.preventDefault();
+                seek(event.key === "Home" ? samples[0]?.time ?? 0
+                  : event.key === "End" ? samples.at(-1)?.time ?? 0 : time + changes[event.key]);
+              }
+            }}
+            onChange={(event) => seek(Number(event.target.value))} />
           <select aria-label="Velocidad de reproducción" value={speed} onChange={(event) => {
             const next = Number(event.target.value);
             if ([1, 1.5, 2, 3].includes(next)) setSpeed(next);
           }}>
             <option value={1}>×1</option><option value={1.5}>×1,5</option><option value={2}>×2</option><option value={3}>×3</option>
           </select>
-          <span>{formatTime(sample?.time ?? null)} / {formatTime(samples.at(-1)?.time ?? null)}</span>
+          <span>{formatTime(samples.length ? time : null)} / {formatTime(samples.at(-1)?.time ?? null)}</span>
         </div>
-        <div className="live-signals" aria-live="polite">
-          {!sample ? "Sube una repetición para ver posiciones reales."
-            : !replay.telemetry.standardField ? "Geometría no verificada: sin valoración táctica."
-            : sample.active !== true ? "Pausa, saque o fase de juego no identificada: sin valoración táctica."
-            : signals.filter((signal) => signal.playerIds.includes(selectedId)).map((signal) => TACTICAL_LABELS[signal.kind]).join(" · ") || "Sin señales en este instante (no implica una rotación correcta)."}
-        </div>
-        <div className="spatial-event-grid">
-          <section><h3>Situaciones a revisar · {events.length}</h3><div className="event-list">
-            {events.length ? events.map((event, number) => <button key={`${event.start}-${event.kind}-${number}`} onClick={() => seek(event.start)}>
-              <time>{formatTime(event.start)}</time><span>{TACTICAL_LABELS[event.kind]}</span><small>{(event.end - event.start).toFixed(1)} s</small>
-            </button>) : <p className="note">{stats.evaluatedSeconds > 0 ? "Sin señales sostenidas de al menos 2 s." : "No hay suficiente juego activo con el equipo completo."}</p>}
-          </div></section>
-          <section><h3>Turbo recogido · {pickups.length}{!replay.telemetry.pickupsObserved && " (N/D)"}</h3><div className="event-list">
+        <div className="replay-events">
+          <div className="event-tabs" role="tablist" aria-label="Eventos de la repetición">
+            {(["errors", "boost", "demos"] as const).map((tab, index, tabs) => <button
+              key={tab} type="button" role="tab" id={`${tabsId}-${tab}`}
+              aria-selected={eventTab === tab} aria-controls={`${tabsId}-${tab}-panel`}
+              tabIndex={eventTab === tab ? 0 : -1}
+              onClick={() => setEventTab(tab)} onKeyDown={(event) => {
+                const next = event.key === "ArrowRight" ? (index + 1) % tabs.length
+                  : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length
+                    : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
+                if (next >= 0) {
+                  event.preventDefault();
+                  setEventTab(tabs[next]);
+                  event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+                }
+              }}>
+              {tab === "errors" ? `Errores (${errors.length})` : tab === "boost"
+                ? `Boost (${replay.telemetry.pickupsObserved ? pickups.length : "N/D"})`
+                : `Demos (${replay.telemetry.demolitionsObserved ? demolitions.length : "N/D"})`}
+            </button>)}
+          </div>
+          <section role="tabpanel" id={`${tabsId}-errors-panel`} aria-labelledby={`${tabsId}-errors`} hidden={eventTab !== "errors"} tabIndex={0}>
+            <h3>Errores posibles · {selected.name}</h3>
+            <div className="event-list">{errors.map((event, number) => <button key={`${event.time}-${number}`} onClick={() => seek(event.time)}>
+              <time>{formatTime(event.time)}</time><span>{event.label}</span><small>{event.duration}</small>
+            </button>)}</div>
+            {!errors.length && <p className="note">{stats.evaluatedSeconds > 0 || details[selectedId].contactSeconds > 0
+              ? "Sin eventos detectados con los datos disponibles." : "No hay datos suficientes para detectar errores."}</p>}
+            <p className="note">Señales orientativas, no errores confirmados. Pulsa un evento para verlo en el campo.</p>
+          </section>
+          <section role="tabpanel" id={`${tabsId}-boost-panel`} aria-labelledby={`${tabsId}-boost`} hidden={eventTab !== "boost"} tabIndex={0}>
+            <h3>Boost recogido · {selected.name}</h3><div className="event-list">
             {pickups.length ? pickups.map((pickup, number) => <button key={`${pickup.time}-${number}`} onClick={() => seek(pickup.time)}>
               <time>{formatTime(pickup.time)}</time><span>{pickup.size === "large" ? "Grande ≈100" : pickup.size === "small" ? "Pequeño ≈12" : "Tipo desconocido"} · {pickup.padId}</span>
             </button>) : <p className="note">{replay.telemetry.pickupsObserved ? "Sin recogidas atribuidas a este jugador." : "Recogidas no disponibles."}</p>}
           </div></section>
+          <section role="tabpanel" id={`${tabsId}-demos-panel`} aria-labelledby={`${tabsId}-demos`} hidden={eventTab !== "demos"} tabIndex={0}>
+            <h3>Demoliciones · todos los jugadores</h3>
+            <div className="demo-totals">{replay.players.map((player) => <span key={player.id} style={{ color: TEAM_COLORS[player.team] }}>
+              {player.name}: {replay.telemetry.demolitionsObserved
+                ? `${demolitions.filter((event) => event.attackerId === player.id && event.cause === "player").length} hechas / ${demolitions.filter((event) => event.victimId === player.id).length} recibidas`
+                : "N/D"}
+            </span>)}</div>
+            <div className="event-list">{demolitions.map((event, number) => <button key={`${event.time}-${number}`} onClick={() => seek(event.time)}>
+              <time>{formatTime(event.time)}</time><span>
+                {event.cause === "self" ? "Autodemolición" : event.cause === "goal" ? "Explosión de gol"
+                  : replay.players.find((player) => player.id === event.attackerId)?.name ?? "Atacante sin identificar"}
+                {" → "}{replay.players.find((player) => player.id === event.victimId)?.name ?? "Víctima sin identificar"}
+              </span>
+            </button>)}</div>
+            {!demolitions.length && <p className="note">{replay.telemetry.demolitionsObserved
+              ? "No se observaron demoliciones." : "Datos de demoliciones no disponibles. Vuelve a subir la repetición para leer los eventos."}</p>}
+            <p className="note">Eventos replicados observados, no inferidos por desaparición de coches. Los totales pueden ser incompletos.</p>
+          </section>
         </div>
         <details className="spatial-method"><summary>Criterios y límites</summary>
           <p>Datos muestreados aproximadamente a 5 Hz. La reproducción interpola posiciones entre muestras continuas; no interpola huecos, cambios de fase ni saltos de posición. Las estadísticas usan solo muestras originales. El calor pondera tiempo observado; cada miniatura tiene su propia escala.</p>
-          <p>Se señalan situaciones de al menos 2 s: compañeros en el suelo a menos de 7 m; aislamiento a más de 40 m del compañero más cercano; dos compañeros en el suelo a menos de 10 m del balón bajo; balón en campo propio sin nadie al menos 5 m por detrás.</p>
-          <p>Se excluyen pausas identificadas, el inicio tras el saque, balón cerca del centro, equipos incompletos y mapas no verificados. Son señales heurísticas, no una calificación de rotación: una presión conjunta puede ser intencional.</p>
           <p>Los eventos confirman recogidas. El pad y su tipo se estiman por proximidad en campos estándar; 12/100 es capacidad, no turbo neto ganado. Los puntos del campo no indican disponibilidad. Las distancias son horizontales y no consideran altura.</p>
+          <p>Errores posibles: señales tácticas sostenidas al menos 2 s (compañeros en el suelo a menos de 7 m, aislamiento a más de 40 m, doble presión a menos de 10 m del balón bajo o sin cobertura 5 m por detrás del balón en campo propio). Se excluyen pausas identificadas, saques, equipos incompletos y mapas no verificados. Los posibles fallos al balón se explican en las estadísticas ampliadas. No se generan consejos.</p>
+          <p>El campo conecta todas las parejas de cada equipo, también entre compañeros no seleccionados. La matriz incluye además distancias entre rivales; no hay datos para jugadores sin posición en el instante elegido.</p>
         </details>
       </section>
 
@@ -199,9 +278,6 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect }: {
             <p className="note">* Aire estimado: altura &gt; 3 m, fuera de los 2,5 m próximos al perímetro; excluye parte del vuelo junto a paredes. No equivale al tiempo sin ruedas en el suelo. Pads: total de recogidas observadas, incluidos intervalos no activos.</p>
             <p className="note">* Aproximación: cruzar de más de 6 m a 6 m o menos del balón, cerrando al menos 1 m entre muestras y moviendo el coche hacia él a ≥3 m/s (distancia 3D). Posible fallo: separarse a más de 9 m antes de 3 s sin aumento del contador de toques. Puede ser una finta o una decisión intencional; no es un error confirmado. Se omiten huecos, pausas, teletransportes y períodos sin contador de toques.</p>
           </details>
-          <h3>Posibles fallos · {selected.name}</h3>
-          <div className="miss-events">{details[selectedId].possibleMisses.map((at) => <button className="button" key={at} onClick={() => seek(at)} aria-label={`Ver posible fallo en ${formatTime(at)}`}>{formatTime(at)}</button>)}</div>
-          {!details[selectedId].possibleMisses.length && <p className="note">{details[selectedId].contactSeconds > 0 ? "Sin posibles fallos detectados con estos criterios." : "No hay datos suficientes del contador de toques."}</p>}
           <p className="note">{details[selectedId].seconds.toFixed(1)} s de juego con posiciones · {details[selectedId].boostSeconds.toFixed(1)} s con turbo · {details[selectedId].contactSeconds.toFixed(1)} s con balón y contador de toques disponibles.</p>
         </div>
       </section>

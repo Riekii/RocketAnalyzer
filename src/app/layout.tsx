@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Rocket Analyzer",
-  description: "Analiza tus repeticiones de Rocket League. Estadísticas reales, comparativas de jugadores y consejos para tu próxima partida.",
+  description: "Datos de tus repeticiones de Rocket League: jugadores, posiciones, mapas de calor y estadísticas.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

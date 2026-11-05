@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     return error("El lector incluido requiere Windows x64 y Node.js x64. Consulta las instrucciones del proyecto.", 503);
   }
 
-  parsing = true;
+  let ownsParser = false;
   let directory: string | undefined;
   try {
     // Bound the entire multipart body, including requests without Content-Length.
@@ -41,9 +41,14 @@ export async function POST(request: Request) {
     if (!reader) return error("No se ha recibido ningún archivo.", 400);
     const chunks: Uint8Array[] = [];
     let size = 0;
+    const uploadTimeoutError = new Error("La subida ha superado los 30 segundos.");
+    let uploadTimer: ReturnType<typeof setTimeout> | undefined;
+    const uploadTimeout = new Promise<never>((_resolve, reject) => {
+      uploadTimer = setTimeout(() => reject(uploadTimeoutError), 30_000);
+    });
     try {
       while (true) {
-        const { done, value } = await reader.read();
+        const { done, value } = await Promise.race([reader.read(), uploadTimeout]);
         if (done) break;
         size += value.byteLength;
         if (size > MAX_REPLAY_BYTES + 1024 * 1024) {
@@ -52,7 +57,15 @@ export async function POST(request: Request) {
         }
         chunks.push(value);
       }
+    } catch (cause) {
+      console.warn("[replay:upload]", cause);
+      if (cause === uploadTimeoutError) {
+        void reader.cancel().catch((cancelError: unknown) => console.warn("[replay:upload-cancel]", cancelError));
+        return error("La subida ha tardado demasiado. Vuelve a seleccionar la repetición.", 408);
+      }
+      throw cause;
     } finally {
+      clearTimeout(uploadTimer);
       reader.releaseLock();
     }
     const body = Buffer.concat(chunks);
@@ -73,6 +86,10 @@ export async function POST(request: Request) {
     if (file.size === 0) return error("El archivo está vacío.", 400);
     if (file.size > MAX_REPLAY_BYTES) return error("El archivo supera el límite de 32 MB.", 413);
 
+    // An unfinished upload must not reserve the parser or unlock someone else's parse.
+    if (parsing) return error("Hay otra repetición en proceso. Inténtalo de nuevo en unos segundos.", 429);
+    parsing = true;
+    ownsParser = true;
     directory = await mkdtemp(path.join(tmpdir(), "rocket-analyzer-"));
     const replayPath = path.join(directory, "match.replay");
     await writeFile(replayPath, Buffer.from(await file.arrayBuffer()));
@@ -114,7 +131,7 @@ export async function POST(request: Request) {
     } catch (cause) {
       console.error("[replay:cleanup]", cause);
     } finally {
-      parsing = false;
+      if (ownsParser) parsing = false;
     }
   }
 }

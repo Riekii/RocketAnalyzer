@@ -17,7 +17,11 @@ export function sampleIndexAt(samples: PositionSample[], time: number): number {
 export function interpolatedSample(samples: PositionSample[], time: number, interval: number): PositionSample | undefined {
   const index = sampleIndexAt(samples, time);
   const before = samples[index], after = samples[index + 1];
-  if (!before || !after || time <= before.time) return before;
+  if (!before) return undefined;
+  if (time - before.time > interval * 1.5 + .001) {
+    return { time, active: null, ball: null, players: [] };
+  }
+  if (!after || time <= before.time) return before;
   const gap = after.time - before.time;
   if (gap <= 0 || gap > interval * 1.5 + .001 || before.active !== after.active) return before;
   const ratio = Math.min(1, (time - before.time) / gap);
