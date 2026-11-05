@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
     "/api/analyze": [
       "./scripts/parse-replay.mjs",
       "./.local/rrrocket/rrrocket.exe",
+      "./.local/rrrocket/rrrocket",
       "./src/lib/replay.ts",
       "./src/lib/network.ts",
       "./src/lib/telemetry.ts",

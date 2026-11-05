@@ -4,7 +4,7 @@ Web en español para analizar archivos `.replay` de Rocket League. Vista compact
 
 ## Requisitos
 
-- **Windows x64 y Node.js x64 22.18 o superior**. El paquete nativo `@kant/node-boxcars` 0.3.1 publica un binario para esta plataforma. Esta versión del proyecto no puede analizar archivos en Linux, macOS ni Windows ARM.
+- **Windows x64 o Linux x64 con Node.js 22.18 o superior** (o Docker en Linux x64). En Linux el análisis usa solo rrrocket; el lector antiguo `@kant/node-boxcars` 0.3.1 únicamente existe para Windows x64. No funciona en macOS ni en ARM.
 - npm incluido con Node.js.
 - Repeticiones de fútbol compatibles con el lector boxcars. Para las versiones recientes se utiliza **rrrocket 0.11.8 / boxcars 0.13.0**, instalado localmente con el comando siguiente.
 
@@ -20,7 +20,7 @@ npm.cmd run dev
 
 Abre <http://127.0.0.1:3000>. No hace falta configurar tokens, claves de API ni servicios externos. La instalación debe incluir las dependencias opcionales: contienen el binario nativo del lector. No uses `--omit=optional`.
 
-`parser:setup` descarga el binario oficial de [rrrocket 0.11.8](https://github.com/nickbabcock/rrrocket/releases/tag/v0.11.8), verifica su SHA-256 y lo guarda en `.local/rrrocket/rrrocket.exe`, fuera de Git. Requiere conexión únicamente para instalarlo, no para analizar partidas. Usa el instalador Node también si PowerShell bloquea los archivos `.ps1`. Instálalo antes de compilar para incluirlo en la distribución de producción.
+`parser:setup` descarga el binario oficial de [rrrocket 0.11.8](https://github.com/nickbabcock/rrrocket/releases/tag/v0.11.8) para Windows x64 o Linux x64, verifica su SHA-256 y lo guarda en `.local/rrrocket/` (`rrrocket.exe` o `rrrocket`), fuera de Git. Requiere conexión únicamente para instalarlo, no para analizar partidas. Usa el instalador Node también si PowerShell bloquea los archivos `.ps1`. Instálalo antes de compilar para incluirlo en la distribución de producción.
 
 Para comprobar tipos y ejecutar las pruebas:
 
@@ -37,6 +37,26 @@ npm start
 ```
 
 La aplicación arranca vacía, sin partidos ficticios. Arrastra una repetición o pulsa **Subir replay**, arriba a la derecha. Una pantalla de carga bloquea las interacciones mientras se reciben y preparan los datos. Si falla la carga, se muestra el error y se conservan los datos anteriores.
+
+## Despliegue en un servidor Linux con Docker
+
+Requisitos: servidor Linux x64 con Docker y Docker Compose, un dominio con un registro DNS A/AAAA hacia la IP del servidor y los puertos 80 y 443 abiertos. [Caddy](https://caddyserver.com) obtiene y renueva el certificado HTTPS automáticamente.
+
+```bash
+git clone https://github.com/Riekii/RocketAnalyzer.git rocketanalyzer   # o copia la carpeta
+cd rocketanalyzer
+cp .env.example .env        # edita DOMAIN con tu dominio
+docker compose up -d --build
+docker compose logs -f      # comprobar el arranque
+```
+
+La imagen descarga rrrocket para Linux y verifica su SHA-256 durante la compilación. La aplicación escucha solo en `127.0.0.1:3000` del servidor, y Caddy publica el sitio en `https://DOMAIN` con un límite de subida de 34 MB y 120 s de tiempo de espera. `PUBLIC_ORIGIN` (definido por `compose.yaml` a partir de `DOMAIN`) es necesario porque el proxy reenvía por HTTP: sin él, las subidas devuelven 403.
+
+- **Actualizar:** `git pull` y `docker compose up -d --build`.
+- **Contraseña:** descomenta `basic_auth` en `Caddyfile`, genera el hash con `docker compose run --rm caddy caddy hash-password` y ejecuta `docker compose restart caddy`.
+- **Si ya usas Nginx en 80/443:** arranca solo `docker compose up -d --build app` y apunta Nginx a `http://127.0.0.1:3000` con `client_max_body_size 34m;` y `proxy_read_timeout 120s;`.
+
+Se analiza una repetición a la vez por contenedor; las demás reciben 429 hasta que termine.
 
 ## Encontrar tus repeticiones
 

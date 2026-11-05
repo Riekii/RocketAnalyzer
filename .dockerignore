@@ -1,0 +1,16 @@
+.git
+.gitignore
+node_modules
+.next
+.local
+out
+coverage
+tests
+*.replay
+*.tsbuildinfo
+next-env.d.ts
+.env*
+Dockerfile
+.dockerignore
+compose.yaml
+Caddyfile

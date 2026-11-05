@@ -52,5 +52,18 @@ test("no confía en cabeceras forwarded para autorizar otros orígenes", () => {
   const input = request("https://example.com", "127.0.0.1:3000");
   input.headers.set("x-forwarded-host", "example.com");
   input.headers.set("x-forwarded-proto", "https");
-  assert.equal(hasSameOrigin(input), false);
+  assert.equal(hasSameOrigin(input, undefined), false);
+});
+
+test("acepta el origen público configurado detrás de un proxy HTTPS", () => {
+  const input = request("https://replays.example.com", "replays.example.com");
+  assert.equal(hasSameOrigin(input, undefined), false);
+  assert.equal(hasSameOrigin(input, "https://replays.example.com"), true);
+  assert.equal(hasSameOrigin(input, "https://replays.example.com/"), true);
+});
+
+test("el origen público configurado no autoriza otros orígenes", () => {
+  assert.equal(hasSameOrigin(request("https://example.com", "replays.example.com"), "https://replays.example.com"), false);
+  assert.equal(hasSameOrigin(request("https://replays.example.com:8443", "replays.example.com"), "https://replays.example.com"), false);
+  assert.equal(hasSameOrigin(request("null", "replays.example.com"), "invalid"), false);
 });
