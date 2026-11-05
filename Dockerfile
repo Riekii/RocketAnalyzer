@@ -1,12 +1,18 @@
 # syntax=docker/dockerfile:1
+FROM rust:1-bookworm AS parser
+# rrrocket v0.11.8, built natively with its locked dependencies.
+RUN cargo install --git https://github.com/nickbabcock/rrrocket.git \
+    --rev c2152bdb46dceff779a02c19616b9135d83dd41d \
+    --locked --jobs 1 --root /parser rrrocket
+
 FROM node:24-bookworm-slim AS build
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-# Downloads the Linux rrrocket binary and verifies its SHA-256 before building.
-RUN npm run parser:setup && npm run build
+COPY --from=parser /parser/bin/rrrocket ./.local/rrrocket/rrrocket
+RUN ./.local/rrrocket/rrrocket --help && npm run build
 
 FROM node:24-bookworm-slim
 WORKDIR /app

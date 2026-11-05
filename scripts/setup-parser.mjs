@@ -22,7 +22,7 @@ const targets = {
 };
 const target = targets[`${process.platform}-${process.arch}`];
 if (!target) {
-  throw new Error("El lector incluido requiere Windows x64 o Linux x64.");
+  throw new Error("La descarga del lector requiere Windows x64 o Linux x64. En Linux ARM64 usa Docker para compilar el lector nativamente.");
 }
 const { distribution, extension, executable: executableName, hash } = target;
 

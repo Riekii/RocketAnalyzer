@@ -4,7 +4,7 @@ Web en español para analizar archivos `.replay` de Rocket League. Vista compact
 
 ## Requisitos
 
-- **Windows x64 o Linux x64 con Node.js 22.18 o superior** (o Docker en Linux x64). En Linux el análisis usa solo rrrocket; el lector antiguo `@kant/node-boxcars` 0.3.1 únicamente existe para Windows x64. No funciona en macOS ni en ARM.
+- **Windows x64 o Linux x64 con Node.js 22.18 o superior**, o **Docker en Linux x64/ARM64** (incluida Raspberry Pi con sistema de 64 bits). En Linux el análisis usa solo rrrocket; el lector antiguo `@kant/node-boxcars` 0.3.1 únicamente existe para Windows x64. No funciona en macOS ni en ARM de 32 bits.
 - npm incluido con Node.js.
 - Repeticiones de fútbol compatibles con el lector boxcars. Para las versiones recientes se utiliza **rrrocket 0.11.8 / boxcars 0.13.0**, instalado localmente con el comando siguiente.
 
@@ -40,7 +40,7 @@ La aplicación arranca vacía, sin partidos ficticios. Arrastra una repetición 
 
 ## Despliegue en un servidor Linux con Docker
 
-Requisitos: servidor Linux x64 con Docker y Docker Compose, un dominio con un registro DNS A/AAAA hacia la IP del servidor y los puertos 80 y 443 abiertos. [Caddy](https://caddyserver.com) obtiene y renueva el certificado HTTPS automáticamente.
+Requisitos: servidor Linux x64 o ARM64 con Docker y Docker Compose, un dominio con un registro DNS A/AAAA hacia la IP del servidor y los puertos 80 y 443 abiertos. [Caddy](https://caddyserver.com) obtiene y renueva el certificado HTTPS automáticamente.
 
 ```bash
 git clone https://github.com/Riekii/RocketAnalyzer.git rocketanalyzer   # o copia la carpeta
@@ -50,7 +50,9 @@ docker compose up -d --build
 docker compose logs -f      # comprobar el arranque
 ```
 
-La imagen descarga rrrocket para Linux y verifica su SHA-256 durante la compilación. La aplicación escucha solo en `127.0.0.1:3000` del servidor, y Caddy publica el sitio en `https://DOMAIN` con un límite de subida de 34 MB y 120 s de tiempo de espera. `PUBLIC_ORIGIN` (definido por `compose.yaml` a partir de `DOMAIN`) es necesario porque el proxy reenvía por HTTP: sin él, las subidas devuelven 403.
+La imagen compila rrrocket 0.11.8 nativamente para la arquitectura del servidor desde la revisión fija `c2152bdb46dceff779a02c19616b9135d83dd41d`, con sus dependencias bloqueadas. No necesita emulación x64 en Raspberry Pi ni instalar Rust o Node.js en el servidor: las herramientas de compilación quedan en una etapa separada de Docker. La primera compilación puede tardar varios minutos; se usa un solo trabajo de Cargo para reducir el consumo de memoria. En ARM64 no ejecutes `npm run parser:setup`: ese comando descarga binarios que solo se publican para x64.
+
+La aplicación escucha solo en `127.0.0.1:3000` del servidor, y Caddy publica el sitio en `https://DOMAIN` con un límite de subida de 34 MB y 120 s de tiempo de espera. `PUBLIC_ORIGIN` (definido por `compose.yaml` a partir de `DOMAIN`) es necesario porque el proxy reenvía por HTTP: sin él, las subidas devuelven 403.
 
 - **Actualizar:** `git pull` y `docker compose up -d --build`.
 - **Contraseña:** descomenta `basic_auth` en `Caddyfile`, genera el hash con `docker compose run --rm caddy caddy hash-password` y ejecuta `docker compose restart caddy`.

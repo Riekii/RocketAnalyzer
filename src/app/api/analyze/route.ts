@@ -29,8 +29,10 @@ export async function POST(request: Request) {
   if (length && Number(length) > MAX_REPLAY_BYTES + 1024 * 1024) {
     return error("El archivo supera el límite de 32 MB.", 413);
   }
-  if (process.arch !== "x64" || (process.platform !== "win32" && process.platform !== "linux")) {
-    return error("El lector incluido requiere Windows x64 o Linux x64. Consulta las instrucciones del proyecto.", 503);
+  const supportedPlatform = (process.platform === "win32" && process.arch === "x64")
+    || (process.platform === "linux" && (process.arch === "x64" || process.arch === "arm64"));
+  if (!supportedPlatform) {
+    return error("El lector requiere Windows x64 o Linux x64/ARM64. Consulta las instrucciones del proyecto.", 503);
   }
 
   let ownsParser = false;
