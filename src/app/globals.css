@@ -153,7 +153,7 @@ tbody tr:last-child > * { border-bottom: 0; }
 .spatial-workspace .section-heading { padding: 12px 14px; }
 .spatial-workspace h2 { font-size: 15px; }
 .spatial-workspace .note { font-size: 11px; }
-.telemetry-table { min-width: 730px; font-size: 12px; }
+.telemetry-table { min-width: 960px; font-size: 12px; }
 .telemetry-table th, .telemetry-table td { padding: 7px 8px; }
 .telemetry-table thead th { font-size: 10px; }
 .telemetry-table .player-name { gap: 7px; }
@@ -162,6 +162,14 @@ tbody tr:last-child > * { border-bottom: 0; }
 .roster-name small { display: block; font-size: 9px; }
 .boost-value { font-size: 11px; }
 .telemetry-table meter { display: block; height: 5px; width: 63px; margin-top: 3px; margin-left: auto; accent-color: #e6bf66; }
+.telemetry-table .sort-button { all: unset; cursor: pointer; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; white-space: nowrap; }
+.telemetry-table .sort-button:focus-visible { outline: 2px solid #e6bf66; outline-offset: 2px; border-radius: 3px; }
+.telemetry-table th.sorted { color: #e6bf66; }
+.telemetry-table td.stat-top { color: #7ee2a8; font-weight: 700; background: linear-gradient(90deg, #7ee2a81f, transparent); }
+.telemetry-table td.stat-low { color: #ff9a8a; background: linear-gradient(90deg, #ff9a8a1a, transparent); }
+.pad-bar { position: relative; display: grid; grid-template-columns: minmax(40px, 1fr) 24px; align-items: center; gap: 6px; }
+.pad-bar > span { display: block; height: 6px; border-radius: 3px; background: linear-gradient(90deg, #e6bf66, #7ee2a8); }
+.pad-bar > b { font-size: 12px; text-align: right; }
 .player-heatmaps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; padding: 12px 10px; }
 .mini-heat { background: var(--panel-soft); border: 1px solid #354454; border-radius: 8px; padding: 6px; color: #dce8f6; min-width: 0; transition: border-color .15s, background .15s; }
 .mini-heat:hover { border-color: #4a5a74; }

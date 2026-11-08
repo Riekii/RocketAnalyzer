@@ -11,6 +11,17 @@ import { initialPlaybackTime, interpolatedSample, playbackTime, sampleIndexAt, t
 import { detailedStats } from "@/lib/detailed-stats";
 import { Replay3D } from "./replay-3d";
 
+type RosterSortKey = "order" | "name" | "score" | "goals" | "assists" | "saves" | "shots" | "shooting" | "boost" | "large" | "small" | "unknown" | "total" | "distance";
+type RosterSort = { key: RosterSortKey; dir: "asc" | "desc" };
+
+function compareRosterValues(a: string | number | null, b: string | number | null, dir: "asc" | "desc") {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  const diff = typeof a === "string" && typeof b === "string" ? a.localeCompare(b, "es") : Number(a) - Number(b);
+  return dir === "asc" ? diff : -diff;
+}
+
 const percentage = (seconds: number, total: number) => total > 0 ? `${Math.round(seconds / total * 100)} %` : "N/D";
 const meters = (units: number | null) => units === null ? "N/D" : `${(units / 100).toFixed(1)} m`;
 
@@ -24,6 +35,7 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
   const [speed, setSpeed] = useState(1);
   const [heatScope, setHeatScope] = useState<"match" | "recent">("match");
   const [eventTab, setEventTab] = useState<"errors" | "boost" | "demos">("errors");
+  const [rosterSort, setRosterSort] = useState<RosterSort>({ key: "order", dir: "asc" });
   const tabsId = useId();
   const samples = replay.telemetry.samples;
   const startTime = samples[0]?.time ?? 0;
@@ -45,6 +57,47 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
   const demolitions = replay.telemetry.demolitions ?? [];
   const distances = playerDistances(sample, replay.players);
   const positions = new Map(sample?.players.map((point) => [point.id, point]));
+  const rosterRows = replay.players.map((player, order) => {
+    const point = positions.get(player.id);
+    const teammates = sample?.players.filter((other) => other.id !== player.id &&
+      replay.players.some((member) => member.id === other.id && member.team === player.team)) ?? [];
+    const nearest = point && teammates.length ? Math.min(...teammates.map((other) => distance(point, other))) : null;
+    const row = analysis.players[player.id];
+    const pads = replay.telemetry.pickupsObserved && row.trackedSeconds > 0 ? {
+      large: row.largePickups, small: row.smallPickups, unknown: row.unknownPickups,
+      total: row.largePickups + row.smallPickups + row.unknownPickups,
+    } : null;
+    const values: Record<RosterSortKey, string | number | null> = {
+      order, name: player.name, score: player.score, goals: player.goals, assists: player.assists, saves: player.saves,
+      shots: player.shots, shooting: player.shooting, boost: point?.boost ?? null,
+      large: pads?.large ?? null, small: pads?.small ?? null, unknown: pads?.unknown ?? null, total: pads?.total ?? null,
+      distance: nearest,
+    };
+    return { player, order, point, nearest, pads, values };
+  });
+  const sortedRows = [...rosterRows].sort((a, b) => compareRosterValues(a.values[rosterSort.key], b.values[rosterSort.key], rosterSort.dir));
+  const maxTotal = Math.max(0, ...rosterRows.map((row) => row.pads?.total ?? 0));
+  const padClass = (key: "large" | "small" | "unknown" | "total", value: number | null) => {
+    if (value === null) return "";
+    const values = rosterRows.flatMap((row) => row.pads ? [row.pads[key]] : []);
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+    if (max === min) return "";
+    return value === max ? "stat-top" : value === min ? "stat-low" : "";
+  };
+  function toggleRosterSort(key: RosterSortKey) {
+    setRosterSort((current) => current.key === key
+      ? { key, dir: current.dir === "asc" ? "desc" : "asc" }
+      : { key, dir: key === "name" || key === "order" ? "asc" : "desc" });
+  }
+  const sortHeader = (key: RosterSortKey, label: string, title?: string) => {
+    const active = rosterSort.key === key;
+    return <th scope="col" title={title} className={active ? "sorted" : ""} aria-sort={active ? (rosterSort.dir === "asc" ? "ascending" : "descending") : "none"}>
+      <button type="button" className="sort-button" onClick={() => toggleRosterSort(key)}>
+        {label}<span aria-hidden="true">{active ? (rosterSort.dir === "asc" ? " ▲" : " ▼") : " ↕"}</span>
+      </button>
+    </th>;
+  };
   const currentHeat = useMemo(() => {
     if (heatScope === "match" || !observedSample) return analysis.heatmaps[selectedId];
     return heatmapFor(samples, replay.telemetry.sampleInterval, selectedId, Math.max(0, observedSample.time - 10), observedSample.time);
@@ -101,16 +154,16 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
           <table className="telemetry-table">
             <caption className="sr-only">Turbo y distancia corresponden al instante seleccionado. Los pads son el total observado en la grabación. Tipos de pad estimados por proximidad.</caption>
             <thead><tr>
-              <th scope="col">Jugador</th><th scope="col">Pts</th><th scope="col">G</th><th scope="col">A</th><th scope="col">Par.</th><th scope="col">Tiros</th><th scope="col">% tiro</th>
-              <th scope="col">Turbo ahora</th><th scope="col" title="Recogidas observadas, tipo estimado por proximidad: grandes / pequeñas / sin tipo">Pads G / P / ?</th>
-              <th scope="col" title="Distancia horizontal al compañero más cercano en el instante seleccionado">Dist. comp.</th>
+              {sortHeader("name", "Jugador")}{sortHeader("score", "Pts")}{sortHeader("goals", "G")}{sortHeader("assists", "A")}{sortHeader("saves", "Par.")}{sortHeader("shots", "Tiros")}{sortHeader("shooting", "% tiro")}
+              {sortHeader("boost", "Turbo ahora")}
+              {sortHeader("large", "Grandes", "Recogidas de pads grandes (≈100 de turbo, estimado por proximidad)")}
+              {sortHeader("small", "Pequeños", "Recogidas de pads pequeños (≈12 de turbo, estimado por proximidad)")}
+              {sortHeader("unknown", "Sin tipo", "Recogidas sin tipo de pad identificado")}
+              {sortHeader("total", "Total pads", "Total de recogidas observadas")}
+              {sortHeader("distance", "Dist. comp.", "Distancia horizontal al compañero más cercano en el instante seleccionado")}
             </tr></thead>
-            <tbody>{replay.players.map((player, number) => {
-              const point = positions.get(player.id);
-              const teammates = sample?.players.filter((other) => other.id !== player.id &&
-                replay.players.some((member) => member.id === other.id && member.team === player.team)) ?? [];
-              const nearest = point && teammates.length ? Math.min(...teammates.map((other) => distance(point, other))) : null;
-              const row = analysis.players[player.id];
+            <tbody>{sortedRows.map(({ player, order, point, nearest, pads }) => {
+              const number = order;
               return <tr key={player.id} className={selectedId === player.id ? "selected-row" : ""}>
                 <th scope="row"><button className="player-name" onClick={() => onSelect(player.id)} aria-pressed={selectedId === player.id}>
                   <span className="player-number" style={{ background: TEAM_COLORS[player.team] }}>{number + 1}</span>
@@ -119,7 +172,12 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
                 <td>{player.score ?? "N/D"}</td><td>{player.goals ?? "N/D"}</td><td>{player.assists ?? "N/D"}</td><td>{player.saves ?? "N/D"}</td><td>{player.shots ?? "N/D"}</td>
                 <td>{player.shooting === null ? "N/D" : `${player.shooting} %`}</td>
                 <td><span className="boost-value">{point?.boost === null || point?.boost === undefined ? "N/D" : `${point.boost} %`}</span><meter min={0} max={100} value={point?.boost ?? 0} aria-label={`Turbo de ${player.name}`} aria-valuetext={point?.boost === null || point?.boost === undefined ? "No disponible" : `${point.boost} %`} /></td>
-                <td>{replay.telemetry.pickupsObserved && row.trackedSeconds > 0 ? `${row.largePickups} / ${row.smallPickups} / ${row.unknownPickups}` : "N/D"}</td>
+                <td className={padClass("large", pads?.large ?? null)}>{pads ? pads.large : "N/D"}</td>
+                <td className={padClass("small", pads?.small ?? null)}>{pads ? pads.small : "N/D"}</td>
+                <td className={padClass("unknown", pads?.unknown ?? null)}>{pads ? pads.unknown : "N/D"}</td>
+                <td className={padClass("total", pads?.total ?? null)}>
+                  {pads ? <span className="pad-bar"><span style={{ width: `${maxTotal > 0 ? Math.round(pads.total / maxTotal * 100) : 0}%` }} /><b>{pads.total}</b></span> : "N/D"}
+                </td>
                 <td>{meters(nearest)}</td>
               </tr>;
             })}</tbody>
