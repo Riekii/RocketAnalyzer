@@ -371,6 +371,21 @@ test("descarta proximidad y doble presión aérea y respeta los umbrales exactos
   assert.ok(!sampleSignals(sample, demoReplay.players, true).some((signal) => signal.kind === "pressure"));
 });
 
+test("mantiene distancias observadas en mapas desconocidos sin activar valoración táctica", () => {
+  const samples = Array.from({ length: 13 }, (_, index) => tacticalSample(index * .2));
+  const known = { ...demoReplay, telemetry: { ...emptyTelemetry(""), standardField: true, samples } };
+  const unknown = { ...known, telemetry: { ...known.telemetry, standardField: false } };
+  const expected = analyzeTelemetry(known);
+  const result = analyzeTelemetry(unknown);
+  assert.ok(playerDistances(samples[0], unknown.players).length > 0);
+  for (const player of unknown.players) {
+    assert.equal(result.players[player.id].meanDistance, expected.players[player.id].meanDistance);
+    assert.equal(result.players[player.id].evaluatedSeconds, 0);
+  }
+  assert.ok(result.players[unknown.players[0].id].meanDistance !== null);
+  assert.deepEqual(result.events, []);
+});
+
 test("exige dos segundos continuos y no une señales separadas por pausas", () => {
   const makeReplay = (samples: PositionSample[]): Replay => ({
     ...demoReplay, telemetry: { ...emptyTelemetry(""), standardField: true, warnings: [], samples },

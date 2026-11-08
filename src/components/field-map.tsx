@@ -24,7 +24,7 @@ export const FieldMap = memo(function FieldMap({ replay, sample, heat, selectedI
   const clip = useId();
   const ballGlow = useId();
   const maximum = Math.max(0, ...(heat ?? []));
-  const pairs = !heat && replay.telemetry.standardField ? playerDistances(sample, replay.players).filter((pair) => pair.team !== null) : [];
+  const pairs = !heat ? playerDistances(sample, replay.players).filter((pair) => pair.team !== null) : [];
   return (
     <svg className={`field-map ${small ? "mini-field" : ""}`} viewBox="0 0 570 456" role="img"
       aria-label={heat ? "Mapa de calor: más intensidad indica más tiempo observado en esa zona." : "Posiciones en el instante seleccionado. Los números corresponden a los jugadores de la tabla."}>

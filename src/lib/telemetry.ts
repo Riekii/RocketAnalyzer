@@ -227,8 +227,8 @@ export function analyzeTelemetry(replay: Replay): SpatialAnalysis {
       const roster = replay.players.filter((member) => member.team === player.team);
       const complete = roster.every((member) => sample.players.some((other) => other.id === member.id));
       if (sample.active === true && sample.ball && Math.hypot(sample.ball.x, sample.ball.y) >= 350 &&
-        telemetry.standardField && complete && roster.length >= 2) {
-        row.evaluatedSeconds += dt;
+        complete && roster.length >= 2) {
+        if (telemetry.standardField) row.evaluatedSeconds += dt;
         distanceSums[point.id] += Math.min(...teammates.map((other) => distance(point, other))) * dt;
         distanceTimes[point.id] += dt;
       }

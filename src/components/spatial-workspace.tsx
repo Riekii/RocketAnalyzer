@@ -120,7 +120,7 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
                 <td>{player.shooting === null ? "N/D" : `${player.shooting} %`}</td>
                 <td><span className="boost-value">{point?.boost === null || point?.boost === undefined ? "N/D" : `${point.boost} %`}</span><meter min={0} max={100} value={point?.boost ?? 0} aria-label={`Turbo de ${player.name}`} aria-valuetext={point?.boost === null || point?.boost === undefined ? "No disponible" : `${point.boost} %`} /></td>
                 <td>{replay.telemetry.pickupsObserved && row.trackedSeconds > 0 ? `${row.largePickups} / ${row.smallPickups} / ${row.unknownPickups}` : "N/D"}</td>
-                <td>{replay.telemetry.standardField ? meters(nearest) : "N/D"}</td>
+                <td>{meters(nearest)}</td>
               </tr>;
             })}</tbody>
           </table>
@@ -149,7 +149,7 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
                 const pair = distances.find(({ first, second }) => (first.id === player.id && second.id === other.id) ||
                   (first.id === other.id && second.id === player.id));
                 return <td key={other.id}>{player.id === other.id ? "—"
-                  : replay.telemetry.standardField && pair ? (pair.units / 100).toFixed(1) : "N/D"}</td>;
+                  : pair ? (pair.units / 100).toFixed(1) : "N/D"}</td>;
               })}
             </tr>)}</tbody>
           </table>
