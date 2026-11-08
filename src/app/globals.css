@@ -188,7 +188,14 @@ tbody tr:last-child > * { border-bottom: 0; }
 .detailed-statistics { grid-column: 1 / -1; }
 .replay-3d { grid-column: 1 / -1; }
 .replay-3d-viewport { position: relative; }
-.replay-3d canvas { display: block; width: 100%; height: clamp(300px, 50vw, 540px); touch-action: none; cursor: grab; }
+.replay-3d canvas { display: block; width: 100%; height: clamp(380px, 55vw, 650px); touch-action: none; cursor: grab; }
+.replay-3d-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.replay-3d-expanded { position: fixed; inset: 3vh 3vw; z-index: 1000; display: flex; flex-direction: column; background: var(--panel); box-shadow: 0 0 0 100vmax #000b; overflow-y: auto; }
+.replay-3d-expanded .replay-3d-viewport { flex: 1; min-height: 200px; }
+.replay-3d-expanded canvas { height: 100%; position: absolute; inset: 0; }
+.replay-3d-expanded > .section-heading { flex-wrap: wrap; }
+.goal-markers-interactive { height: 20px; }
+.goal-markers-interactive button { position: absolute; top: 0; padding: 0; width: 10px; height: 18px; border: 1px solid #fff8; border-radius: 3px; transform: translateX(-50%); }
 .replay-3d canvas:active { cursor: grabbing; }
 .replay-3d-message { position: absolute; inset: 0; display: grid; place-content: center; padding: 20px; text-align: center; pointer-events: none; }
 .replay-3d-note { padding: 0 14px 12px; }

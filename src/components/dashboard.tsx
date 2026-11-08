@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import { formatTime, MAX_REPLAY_BYTES, MAX_REPLAY_LABEL, replayLabel, teamName, type Replay } from "@/lib/replay";
 import { analyzeTelemetry } from "@/lib/telemetry";
 import { SpatialWorkspace } from "./spatial-workspace";
@@ -11,6 +11,9 @@ export function Dashboard() {
   const [history, setHistory] = useState<Replay[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [loading, setLoading] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const busy = loading || preparing;
+  const viewerReady = useCallback(() => setPreparing(false), []);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState("");
   const [announcement, setAnnouncement] = useState("");
@@ -21,14 +24,16 @@ export function Dashboard() {
   const analysis = useMemo(() => replay ? analyzeTelemetry(replay) : null, [replay]);
 
   useEffect(() => {
-    if (!loading) return;
+    if (!busy) return;
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = overflow; };
-  }, [loading]);
+  }, [busy]);
 
   function showReplay(next: Replay) {
     if (uploadLock.current) return;
+    if (next.id === replay?.id) return;
+    setPreparing(true);
     setReplay(next);
     setSelectedId(next.players[0].id);
     setError(partialError(next));
@@ -77,6 +82,7 @@ export function Dashboard() {
             throw new Error("El servidor no ha devuelto los datos de la repetición.");
           }
           if (completed === 0) {
+            setPreparing(true);
             setReplay(result);
             setSelectedId(result.players[0].id);
           }
@@ -130,18 +136,18 @@ export function Dashboard() {
 
   return (
     <>
-      {loading && <div className="loading-screen" role="status" aria-live="polite" aria-atomic="true">
+      {busy && <div className="loading-screen" role="status" aria-live="polite" aria-atomic="true">
         <div className="loading-card">
           <span className="loading-spinner" aria-hidden="true" />
-          <h2>Cargando {progress.current} de {progress.total} repeticiones…</h2>
+          <h2>{loading ? `Cargando ${progress.current} de ${progress.total} repeticiones…` : "Preparando los mapas…"}</h2>
           <p>{progress.filename}</p>
           <p>Preparando jugadores, posiciones y estadísticas.</p>
         </div>
       </div>}
       <main
         className={`analyzer ${dragging ? "dragging" : ""}`}
-        inert={loading}
-        aria-busy={loading}
+        inert={busy}
+        aria-busy={busy}
         onDragOver={(event) => { event.preventDefault(); if (!loading) setDragging(true); }}
         onDragLeave={(event) => {
           if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setDragging(false);
@@ -202,7 +208,7 @@ export function Dashboard() {
         <summary>Limitaciones de datos ({replay.telemetry.warnings.length})</summary>
         {replay.telemetry.warnings.map((warning) => <p key={warning}>{warning}</p>)}
       </details>}
-      <SpatialWorkspace key={replay.id} replay={replay} analysis={analysis} selectedId={selected.id} onSelect={setSelectedId} loading={loading} />
+      <SpatialWorkspace key={replay.id} replay={replay} analysis={analysis} selectedId={selected.id} onSelect={setSelectedId} loading={busy} onReady={viewerReady} />
       </>}
     </main>
     </>

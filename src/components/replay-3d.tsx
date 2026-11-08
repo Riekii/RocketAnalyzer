@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { Replay } from "@/lib/replay";
 import { formatTime } from "@/lib/replay";
 import { BOOST_PADS, FIELD, type Position, type PositionSample } from "@/lib/telemetry";
 import { carPoint, DEFAULT_REPLAY_CAMERA, orbitCamera, projectPosition, zoomCamera, type ReplayCamera } from "@/lib/replay-3d";
 import { TEAM_COLORS } from "./field-map";
+import { timelinePosition } from "@/lib/playback";
 
 function drawScene(context: CanvasRenderingContext2D, width: number, height: number,
   camera: ReplayCamera, replay: Replay, sample: PositionSample | undefined, selectedId: string) {
@@ -142,13 +143,20 @@ function drawScene(context: CanvasRenderingContext2D, width: number, height: num
       context.strokeText(player.name, label.x, label.y);
       context.fillStyle = TEAM_COLORS[player.team];
       context.fillText(player.name, label.x, label.y);
+      const boost = sample?.players.find((car) => car.id === player.id)?.boost;
+      const boostLabel = boost === null || boost === undefined ? "Boost N/D" : `Boost ${boost} %`;
+      context.font = "600 11px Segoe UI, sans-serif";
+      context.strokeText(boostLabel, label.x, label.y - 15);
+      context.fillStyle = "#fff3ac";
+      context.fillText(boostLabel, label.x, label.y - 15);
     }
   }
 }
 
-export function Replay3D({ replay, sample, selectedId, time, playing, speed, onSeek, onToggle, onSpeed }: {
+export function Replay3D({ replay, sample, selectedId, time, playing, speed, onSeek, onToggle, onSpeed, onReady }: {
   replay: Replay; sample?: PositionSample; selectedId: string; time: number; playing: boolean; speed: number;
   onSeek: (time: number) => void; onToggle: () => void; onSpeed: (speed: number) => void;
+  onReady?: () => void;
 }) {
   const titleId = useId();
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -156,7 +164,28 @@ export function Replay3D({ replay, sample, selectedId, time, playing, speed, onS
   const [camera, setCamera] = useState(DEFAULT_REPLAY_CAMERA);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [error, setError] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const ready = useRef(false);
+  const expandButton = useRef<HTMLButtonElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const section = useRef<HTMLElement>(null);
   useEffect(() => {
+    if (!expanded) return;
+    const overflow = document.body.style.overflow;
+    const analyzer = section.current?.closest("main");
+    const siblings = analyzer ? Array.from(analyzer.children).filter((element): element is HTMLElement =>
+      element instanceof HTMLElement && !element.contains(section.current)) : [];
+    const previous = siblings.map((element) => element.inert);
+    siblings.forEach((element) => { element.inert = true; });
+    document.body.style.overflow = "hidden";
+    closeButton.current?.focus();
+    return () => {
+      document.body.style.overflow = overflow;
+      siblings.forEach((element, index) => { element.inert = previous[index]; });
+      expandButton.current?.focus();
+    };
+  }, [expanded]);
+  useLayoutEffect(() => {
     const element = canvas.current;
     if (!element) return;
     const bounds = element.getBoundingClientRect();
@@ -172,13 +201,14 @@ export function Replay3D({ replay, sample, selectedId, time, playing, speed, onS
     element.addEventListener("wheel", wheel, { passive: false });
     return () => { observer.disconnect(); element.removeEventListener("wheel", wheel); };
   }, []);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = canvas.current;
     if (!element || !size.width || !size.height) return;
     const context = element.getContext("2d");
     if (!context) {
       console.error("[replay:3d]", "El navegador no permite dibujar en canvas.");
       setError("Este navegador no permite dibujar la vista 3D.");
+      onReady?.();
       return;
     }
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
@@ -187,12 +217,35 @@ export function Replay3D({ replay, sample, selectedId, time, playing, speed, onS
     if (element.height !== height) element.height = height;
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     drawScene(context, size.width, size.height, camera, replay, sample, selectedId);
-  }, [size, camera, replay, sample, selectedId]);
+    if (!ready.current) {
+      const frame = requestAnimationFrame(() => {
+        ready.current = true;
+        onReady?.();
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [size, camera, replay, sample, selectedId, onReady]);
   const available = replay.telemetry.standardField && replay.telemetry.samples.length > 0;
   const selected = sample?.players.find((point) => point.id === selectedId);
-  return <section className="panel replay-3d" aria-labelledby={titleId}>
+  const startTime = replay.telemetry.samples[0]?.time ?? 0;
+  const endTime = replay.telemetry.samples.at(-1)?.time ?? 0;
+  return <section ref={section} className={`panel replay-3d${expanded ? " replay-3d-expanded" : ""}`} aria-labelledby={titleId}
+    role={expanded ? "dialog" : undefined} aria-modal={expanded ? true : undefined}
+    onKeyDown={(event) => {
+      if (expanded && event.key === "Escape") { event.stopPropagation(); setExpanded(false); }
+      if (expanded && event.key === "Tab") {
+        const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), canvas'));
+        const first = controls[0], last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    }}>
     <div className="section-heading"><h2 id={titleId}>Reproducción 3D · {formatTime(time)}</h2>
-      <button className="button" onClick={() => setCamera(DEFAULT_REPLAY_CAMERA)}>Restablecer cámara</button></div>
+      <div className="replay-3d-actions">
+        <button className="button" onClick={() => setCamera(DEFAULT_REPLAY_CAMERA)}>Restablecer cámara</button>
+        {expanded ? <button ref={closeButton} className="button" onClick={() => setExpanded(false)}>Cerrar vista ampliada</button>
+          : <button ref={expandButton} className="button" onClick={() => setExpanded(true)}>Ampliar vista</button>}
+      </div></div>
     <div className="replay-3d-viewport">
       <canvas ref={canvas} aria-label="Vista tridimensional del campo, jugadores y balón. Arrastra para girar la cámara."
         tabIndex={0} onKeyDown={(event) => {
@@ -221,9 +274,21 @@ export function Replay3D({ replay, sample, selectedId, time, playing, speed, onS
     </div>
     <div className="playback">
       <button className="button" disabled={!available} onClick={onToggle}>{playing ? "Pausa" : "Reproducir"}</button>
-      <input type="range" min={replay.telemetry.samples[0]?.time ?? 0} max={replay.telemetry.samples.at(-1)?.time ?? 0}
+      <div className="playback-timeline">
+      <input type="range" min={startTime} max={endTime}
         step="any" value={time} disabled={!available} aria-label="Instante de la reproducción 3D"
         onPointerDown={() => onSeek(time)} onChange={(event) => onSeek(Number(event.target.value))} />
+      <div className="goal-markers goal-markers-interactive">
+        {replay.goals.map((goal, index) => {
+          const position = timelinePosition(goal.seconds, startTime, endTime);
+          return position === null ? null : <button type="button" key={`${goal.frame}-${index}`}
+            aria-label={`Gol de ${goal.player} en ${formatTime(goal.seconds)}`}
+            title={`${formatTime(goal.seconds)} · Gol de ${goal.player}`}
+            style={{ left: `${position}%`, background: TEAM_COLORS[goal.team] }}
+            onClick={() => { if (goal.seconds !== null) onSeek(goal.seconds); }} />;
+        })}
+      </div>
+      </div>
       <select aria-label="Velocidad de la reproducción 3D" value={speed} onChange={(event) => onSpeed(Number(event.target.value))}>
         {[1, 1.5, 2, 3].map((value) => <option key={value} value={value}>×{String(value).replace(".", ",")}</option>)}
       </select>

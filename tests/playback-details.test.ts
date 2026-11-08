@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { detailedStats } from "../src/lib/detailed-stats.ts";
-import { initialPlaybackTime, interpolateRotation, interpolatedSample, playbackTime, sampleIndexAt } from "../src/lib/playback.ts";
+import { initialPlaybackTime, interpolateRotation, interpolatedSample, playbackTime, sampleIndexAt, timelinePosition } from "../src/lib/playback.ts";
 import { demoReplay } from "../src/lib/demo.ts";
 import { emptyTelemetry, type PositionSample } from "../src/lib/telemetry.ts";
 
 const id = demoReplay.players[0].id;
+test("las marcas de gol usan el intervalo exacto y excluyen tiempos desconocidos o fuera de rango", () => {
+  assert.equal(timelinePosition(15, 10, 20), 50);
+  assert.equal(timelinePosition(10, 10, 20), 0);
+  assert.equal(timelinePosition(20, 10, 20), 100);
+  for (const time of [null, NaN, 9, 21]) assert.equal(timelinePosition(time, 10, 20), null);
+  assert.equal(timelinePosition(10, 10, 10), null);
+});
 test("el reloj respeta las cuatro velocidades, cambios sin salto y fin de partida", () => {
   for (const speed of [1, 1.5, 2, 3]) {
     assert.equal(playbackTime(10, 1000, speed, 100), 10 + speed);

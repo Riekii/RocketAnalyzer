@@ -1,5 +1,10 @@
 import type { Position, PositionSample, Rotation } from "./telemetry.ts";
 
+export function timelinePosition(seconds: number | null, start: number, end: number): number | null {
+  return seconds !== null && Number.isFinite(seconds) && end > start && seconds >= start && seconds <= end
+    ? (seconds - start) / (end - start) * 100 : null;
+}
+
 export function initialPlaybackTime(samples: PositionSample[], playerCount: number): number {
   return (samples.find((sample) => sample.ball && sample.players.length >= playerCount && playerCount > 0)
     ?? samples.find((sample) => sample.ball && sample.players.length > 0)

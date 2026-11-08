@@ -7,15 +7,15 @@ import {
   distance, heatmapFor, playerDistances, TACTICAL_LABELS, type SpatialAnalysis,
 } from "@/lib/telemetry";
 import { FieldMap, TEAM_COLORS } from "./field-map";
-import { initialPlaybackTime, interpolatedSample, playbackTime, sampleIndexAt } from "@/lib/playback";
+import { initialPlaybackTime, interpolatedSample, playbackTime, sampleIndexAt, timelinePosition } from "@/lib/playback";
 import { detailedStats } from "@/lib/detailed-stats";
 import { Replay3D } from "./replay-3d";
 
 const percentage = (seconds: number, total: number) => total > 0 ? `${Math.round(seconds / total * 100)} %` : "N/D";
 const meters = (units: number | null) => units === null ? "N/D" : `${(units / 100).toFixed(1)} m`;
 
-export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loading = false }: {
-  replay: Replay; analysis: SpatialAnalysis; selectedId: string; onSelect: (id: string) => void; loading?: boolean;
+export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loading = false, onReady }: {
+  replay: Replay; analysis: SpatialAnalysis; selectedId: string; onSelect: (id: string) => void; loading?: boolean; onReady?: () => void;
 }) {
   const [time, setTime] = useState(() => initialPlaybackTime(replay.telemetry.samples, replay.players.length));
   const clock = useRef(time);
@@ -28,9 +28,7 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
   const samples = replay.telemetry.samples;
   const startTime = samples[0]?.time ?? 0;
   const endTime = samples.at(-1)?.time ?? 0;
-  const goalPosition = (seconds: number | null) => seconds !== null && endTime > startTime
-    && seconds >= startTime && seconds <= endTime
-    ? (seconds - startTime) / (endTime - startTime) * 100 : null;
+  const goalPosition = (seconds: number | null) => timelinePosition(seconds, startTime, endTime);
   const index = sampleIndexAt(samples, time);
   const observedSample = samples[index];
   const sample = interpolatedSample(samples, time, replay.telemetry.sampleInterval);
@@ -311,7 +309,7 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
         </div>
       </section>
       <Replay3D replay={replay} sample={sample} selectedId={selectedId} time={time} playing={playing} speed={speed}
-        onSeek={seek} onToggle={togglePlayback} onSpeed={(next) => { if ([1, 1.5, 2, 3].includes(next)) setSpeed(next); }} />
+        onReady={onReady} onSeek={seek} onToggle={togglePlayback} onSpeed={(next) => { if ([1, 1.5, 2, 3].includes(next)) setSpeed(next); }} />
     </div>
   );
 }
