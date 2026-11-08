@@ -13,6 +13,31 @@ import { Replay3D } from "./replay-3d";
 
 type RosterSortKey = "order" | "name" | "score" | "goals" | "assists" | "saves" | "shots" | "shooting" | "boost" | "large" | "small" | "unknown" | "total" | "distance";
 type RosterSort = { key: RosterSortKey; dir: "asc" | "desc" };
+type DetailSortKey = "order" | "name" | "meanBoost" | "empty" | "full" | "large" | "small" | "unknown" | "air" | "airPct" | "approaches" | "misses";
+type DetailSort = { key: DetailSortKey; dir: "asc" | "desc" };
+
+function nextSort<K extends string>(current: { key: K; dir: "asc" | "desc" }, key: K, ascKeys: K[]): { key: K; dir: "asc" | "desc" } {
+  if (current.key === key) return { key, dir: current.dir === "asc" ? "desc" : "asc" };
+  return { key, dir: ascKeys.includes(key) ? "asc" : "desc" };
+}
+
+function SortHeader({ active, dir, label, title, onSort }: { active: boolean; dir: "asc" | "desc"; label: string; title?: string; onSort: () => void }) {
+  return <th scope="col" title={title} className={active ? "sorted" : ""} aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}>
+    <button type="button" className="sort-button" onClick={onSort}>
+      {label}<span aria-hidden="true">{active ? (dir === "asc" ? " ▲" : " ▼") : " ↕"}</span>
+    </button>
+  </th>;
+}
+
+function extremeClass(all: (number | string | null)[], value: number | string | null) {
+  if (typeof value !== "number") return "";
+  const numbers = all.filter((item): item is number => typeof item === "number");
+  if (numbers.length === 0) return "";
+  const max = Math.max(...numbers);
+  const min = Math.min(...numbers);
+  if (max === min) return "";
+  return value === max ? "stat-top" : value === min ? "stat-low" : "";
+}
 
 function compareRosterValues(a: string | number | null, b: string | number | null, dir: "asc" | "desc") {
   if (a === null && b === null) return 0;
@@ -36,6 +61,7 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
   const [heatScope, setHeatScope] = useState<"match" | "recent">("match");
   const [eventTab, setEventTab] = useState<"errors" | "boost" | "demos">("errors");
   const [rosterSort, setRosterSort] = useState<RosterSort>({ key: "order", dir: "asc" });
+  const [detailSort, setDetailSort] = useState<DetailSort>({ key: "order", dir: "asc" });
   const tabsId = useId();
   const samples = replay.telemetry.samples;
   const startTime = samples[0]?.time ?? 0;
@@ -85,19 +111,31 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
     if (max === min) return "";
     return value === max ? "stat-top" : value === min ? "stat-low" : "";
   };
-  function toggleRosterSort(key: RosterSortKey) {
-    setRosterSort((current) => current.key === key
-      ? { key, dir: current.dir === "asc" ? "desc" : "asc" }
-      : { key, dir: key === "name" || key === "order" ? "asc" : "desc" });
-  }
-  const sortHeader = (key: RosterSortKey, label: string, title?: string) => {
-    const active = rosterSort.key === key;
-    return <th scope="col" title={title} className={active ? "sorted" : ""} aria-sort={active ? (rosterSort.dir === "asc" ? "ascending" : "descending") : "none"}>
-      <button type="button" className="sort-button" onClick={() => toggleRosterSort(key)}>
-        {label}<span aria-hidden="true">{active ? (rosterSort.dir === "asc" ? " ▲" : " ▼") : " ↕"}</span>
-      </button>
-    </th>;
-  };
+  const toggleRosterSort = (key: RosterSortKey) => setRosterSort((current) => nextSort(current, key, ["order", "name"]));
+  const sortHeader = (key: RosterSortKey, label: string, title?: string) => <SortHeader active={rosterSort.key === key} dir={rosterSort.dir} label={label} title={title} onSort={() => toggleRosterSort(key)} />;
+  const toggleDetailSort = (key: DetailSortKey) => setDetailSort((current) => nextSort(current, key, ["order", "name"]));
+  const detailHeader = (key: DetailSortKey, label: string, title?: string) => <SortHeader active={detailSort.key === key} dir={detailSort.dir} label={label} title={title} onSort={() => toggleDetailSort(key)} />;
+  const detailRows = replay.players.map((player, order) => {
+    const row = details[player.id], spatial = analysis.players[player.id];
+    const hasPads = replay.telemetry.pickupsObserved && spatial.trackedSeconds > 0;
+    const hasAir = row.seconds > 0 && replay.telemetry.standardField;
+    const hasContact = row.contactSeconds > 0;
+    const values: Record<DetailSortKey, string | number | null> = {
+      order, name: player.name, meanBoost: row.meanBoost,
+      empty: row.boostSeconds > 0 ? row.emptyBoostSeconds : null,
+      full: row.boostSeconds > 0 ? row.fullBoostSeconds : null,
+      large: hasPads ? spatial.largePickups : null,
+      small: hasPads ? spatial.smallPickups : null,
+      unknown: hasPads ? spatial.unknownPickups : null,
+      air: hasAir ? row.airSeconds : null,
+      airPct: hasAir ? row.airSeconds / row.seconds : null,
+      approaches: hasContact ? row.approaches : null,
+      misses: hasContact ? row.possibleMisses.length : null,
+    };
+    return { player, row, spatial, hasPads, hasAir, hasContact, values };
+  });
+  const sortedDetailRows = [...detailRows].sort((a, b) => compareRosterValues(a.values[detailSort.key], b.values[detailSort.key], detailSort.dir));
+
   const currentHeat = useMemo(() => {
     if (heatScope === "match" || !observedSample) return analysis.heatmaps[selectedId];
     return heatmapFor(samples, replay.telemetry.sampleInterval, selectedId, Math.max(0, observedSample.time - 10), observedSample.time);
@@ -195,8 +233,7 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
             <div><dt>Distancia media al compañero</dt><dd>{meters(stats.meanDistance)}</dd></div>
             <div><dt>Tiempo con turbo &lt; 20 %</dt><dd>{percentage(stats.lowBoostSeconds, stats.boostSeconds)}</dd></div>
           </dl>
-          <p className="note">{Math.round(stats.trackedSeconds)} s con posiciones. Turbo y distancia de la tabla: instante elegido. Pads: total observado · G grande / P pequeño / ? sin tipo.</p>
-        </div>
+          <p className="note">{Math.round(stats.trackedSeconds)} s con posiciones. Turbo y distancia de la tabla: instante elegido.           Pads: total observado, en columnas grandes, pequeñas y sin tipo.</p>        </div>
         <div className="distance-matrix table-scroll" tabIndex={0} role="region" aria-label="Distancias entre todos los jugadores">
           <table>
             <caption>Distancias entre todos · metros en planta · instante elegido</caption>
@@ -342,18 +379,32 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
         <div className="section-heading"><h2 id="detailed-title">Más estadísticas · toda la partida</h2><span className="note">Solo tiempo de juego activo observado</span></div>
         <div className="table-scroll" tabIndex={0} role="region" aria-label="Estadísticas ampliadas de todos los jugadores">
           <table className="telemetry-table">
-            <thead><tr><th scope="col">Jugador</th><th scope="col">Turbo medio</th><th scope="col">Sin turbo ≤1 %</th><th scope="col">Turbo lleno ≥99 %</th><th scope="col">Pads G / P / ?</th><th scope="col">En el aire*</th><th scope="col">% aéreo*</th><th scope="col">Aproximaciones*</th><th scope="col">Posibles fallos*</th></tr></thead>
-            <tbody>{replay.players.map((player) => {
-              const row = details[player.id], spatial = analysis.players[player.id];
+            <thead><tr>
+              {detailHeader("name", "Jugador")}
+              {detailHeader("meanBoost", "Turbo medio")}
+              {detailHeader("empty", "Sin turbo ≤1 %", "Tiempo con turbo ≤1 %, en segundos (porcentaje del tiempo con turbo)")}
+              {detailHeader("full", "Turbo lleno ≥99 %", "Tiempo con turbo ≥99 %, en segundos (porcentaje del tiempo con turbo)")}
+              {detailHeader("large", "Grandes", "Recogidas de pads grandes (estimado por proximidad)")}
+              {detailHeader("small", "Pequeños", "Recogidas de pads pequeños (estimado por proximidad)")}
+              {detailHeader("unknown", "Sin tipo", "Recogidas sin tipo de pad identificado")}
+              {detailHeader("air", "En el aire*", "Tiempo en el aire estimado, en segundos")}
+              {detailHeader("airPct", "% aéreo*", "Porcentaje estimado del tiempo en el aire")}
+              {detailHeader("approaches", "Aproximaciones*")}
+              {detailHeader("misses", "Posibles fallos*")}
+            </tr></thead>
+            <tbody>{sortedDetailRows.map(({ player, row, spatial, hasPads, hasAir, hasContact, values }) => {
               return <tr key={player.id} className={player.id === selectedId ? "selected-row" : ""}>
                 <th scope="row"><button className="player-name" onClick={() => onSelect(player.id)} aria-pressed={player.id === selectedId}>{player.name}</button></th>
-                <td>{row.meanBoost === null ? "N/D" : `${Math.round(row.meanBoost)} %`}</td>
-                <td>{row.boostSeconds > 0 ? `${row.emptyBoostSeconds.toFixed(1)} s (${percentage(row.emptyBoostSeconds, row.boostSeconds)})` : "N/D"}</td>
-                <td>{row.boostSeconds > 0 ? `${row.fullBoostSeconds.toFixed(1)} s (${percentage(row.fullBoostSeconds, row.boostSeconds)})` : "N/D"}</td>
-                <td>{replay.telemetry.pickupsObserved && spatial.trackedSeconds > 0 ? `${spatial.largePickups} / ${spatial.smallPickups} / ${spatial.unknownPickups}` : "N/D"}</td>
-                <td>{row.seconds > 0 && replay.telemetry.standardField ? `${row.airSeconds.toFixed(1)} s` : "N/D"}</td>
-                <td>{replay.telemetry.standardField ? percentage(row.airSeconds, row.seconds) : "N/D"}</td>
-                <td>{row.contactSeconds > 0 ? row.approaches : "N/D"}</td><td>{row.contactSeconds > 0 ? row.possibleMisses.length : "N/D"}</td>
+                <td className={extremeClass(detailRows.map((item) => item.values.meanBoost), values.meanBoost)}>{row.meanBoost === null ? "N/D" : `${Math.round(row.meanBoost)} %`}</td>
+                <td className={extremeClass(detailRows.map((item) => item.values.empty), values.empty)}>{row.boostSeconds > 0 ? `${row.emptyBoostSeconds.toFixed(1)} s (${percentage(row.emptyBoostSeconds, row.boostSeconds)})` : "N/D"}</td>
+                <td className={extremeClass(detailRows.map((item) => item.values.full), values.full)}>{row.boostSeconds > 0 ? `${row.fullBoostSeconds.toFixed(1)} s (${percentage(row.fullBoostSeconds, row.boostSeconds)})` : "N/D"}</td>
+                <td className={extremeClass(detailRows.map((item) => item.values.large), values.large)}>{hasPads ? spatial.largePickups : "N/D"}</td>
+                <td className={extremeClass(detailRows.map((item) => item.values.small), values.small)}>{hasPads ? spatial.smallPickups : "N/D"}</td>
+                <td className={extremeClass(detailRows.map((item) => item.values.unknown), values.unknown)}>{hasPads ? spatial.unknownPickups : "N/D"}</td>
+                <td className={extremeClass(detailRows.map((item) => item.values.air), values.air)}>{hasAir ? `${row.airSeconds.toFixed(1)} s` : "N/D"}</td>
+                <td className={extremeClass(detailRows.map((item) => item.values.airPct), values.airPct)}>{hasAir ? percentage(row.airSeconds, row.seconds) : "N/D"}</td>
+                <td className={extremeClass(detailRows.map((item) => item.values.approaches), values.approaches)}>{hasContact ? row.approaches : "N/D"}</td>
+                <td className={extremeClass(detailRows.map((item) => item.values.misses), values.misses)}>{hasContact ? row.possibleMisses.length : "N/D"}</td>
               </tr>;
             })}</tbody>
           </table>
