@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_REPLAY_CAMERA, orbitCamera, projectPosition, zoomCamera } from "../src/lib/replay-3d.ts";
+import { carPoint, DEFAULT_REPLAY_CAMERA, orbitCamera, projectPosition, zoomCamera } from "../src/lib/replay-3d.ts";
+
+test("transforma la carrocería con posición y orientación completas, incluido vuelo invertido", () => {
+  const position = { x: 10, y: 20, z: 30 };
+  const local = { x: 100, y: 0, z: 0 };
+  const rotated = carPoint(local, position, { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 });
+  assert.ok(Math.abs(rotated.x - 10) < 1e-8);
+  assert.ok(Math.abs(rotated.y - 120) < 1e-8);
+  assert.equal(rotated.z, 30);
+  assert.deepEqual(carPoint({ x: 0, y: 0, z: 20 }, position, { x: 1, y: 0, z: 0, w: 0 }),
+    { x: 10, y: 20, z: 10 });
+  assert.deepEqual(carPoint(local, position), { x: 110, y: 20, z: 30 });
+});
 
 test("centra el objetivo y proyecta la altura hacia arriba con perspectiva", () => {
   const camera = { ...DEFAULT_REPLAY_CAMERA, yaw: 0 };

@@ -1,7 +1,7 @@
 import type { Player, Team } from "./replay.ts";
 import {
   emptyTelemetry, nearestPad, SAMPLE_INTERVAL,
-  type Position, type PlayerPosition, type Telemetry,
+  type Position, type PlayerPosition, type Telemetry, type Rotation,
 } from "./telemetry.ts";
 
 interface Actor {
@@ -14,6 +14,7 @@ interface Actor {
   pri?: number;
   vehicle?: number;
   position?: Position;
+  rotation?: Rotation;
   positionTime?: number;
   sleeping?: boolean;
   boost?: number;
@@ -41,6 +42,15 @@ function vector(value: unknown): Position | null {
 function reference(value: unknown): number | null {
   const row = record(value);
   return row?.active === true ? actorId(row.actor) : null;
+}
+
+function rotation(value: unknown): Rotation | undefined {
+  const row = record(value);
+  const x = numeric(row?.x), y = numeric(row?.y), z = numeric(row?.z), w = numeric(row?.w);
+  if (x === null || y === null || z === null || w === null) return undefined;
+  const length = Math.hypot(x, y, z, w);
+  if (length < .5 || length > 1.5) return undefined;
+  return { x: x / length, y: y / length, z: z / length, w: w / length };
 }
 
 export function isStandardField(map: string): boolean {
@@ -177,6 +187,7 @@ export function extractTelemetry(raw: unknown, players: Player[], map: string): 
         const paint = record(attr.TeamPaint);
         if (paint?.team === 0 || paint?.team === 1) actor.team = paint.team;
         const rigidBody = record(attr.RigidBody);
+        if (rigidBody) actor.rotation = rotation(rigidBody.rotation);
         const position = vector(rigidBody?.location);
         if (position) {
           actor.position = position;
@@ -281,6 +292,7 @@ export function extractTelemetry(raw: unknown, players: Player[], map: string): 
       }
       const touches = actor.pri === undefined ? undefined : actors.get(actor.pri)?.ballTouches;
       samples.push({ id: player.id, ...actor.position, boost: boosts.get(id) ?? null,
+        ...(actor.rotation ? { rotation: actor.rotation } : {}),
         ...(touches === undefined ? {} : { ballTouches: touches }) });
     }
     const phaseActive = matchOver

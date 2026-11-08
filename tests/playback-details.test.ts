@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { detailedStats } from "../src/lib/detailed-stats.ts";
-import { interpolatedSample, playbackTime, sampleIndexAt } from "../src/lib/playback.ts";
+import { initialPlaybackTime, interpolateRotation, interpolatedSample, playbackTime, sampleIndexAt } from "../src/lib/playback.ts";
 import { demoReplay } from "../src/lib/demo.ts";
 import { emptyTelemetry, type PositionSample } from "../src/lib/telemetry.ts";
 
@@ -28,6 +28,31 @@ function analyze(samples: PositionSample[]) {
     ...emptyTelemetry(""), samples, standardField: true,
   } })[id];
 }
+
+test("abre el primer instante con jugadores y balón sin bloquear replays parciales", () => {
+  const empty = { ...sample(0, 0), players: [], ball: null };
+  const partial = sample(.2, 0);
+  const complete = { ...sample(.4, 0), players: [...partial.players, { ...partial.players[0], id: "other" }] };
+  assert.equal(initialPlaybackTime([empty, partial, complete], 2), .4);
+  assert.equal(initialPlaybackTime([empty, partial], 2), .2);
+  assert.equal(initialPlaybackTime([empty], 2), 0);
+  assert.equal(initialPlaybackTime([], 2), 0);
+});
+
+test("interpola orientación real por el camino corto y no rota durante teletransportes", () => {
+  const a = { x: 0, y: 0, z: 0, w: 1 };
+  const b = { x: 0, y: 0, z: 1, w: 0 };
+  const halfway = interpolateRotation(a, b, .5);
+  assert.ok(Math.abs(halfway.z - Math.SQRT1_2) < 1e-8);
+  assert.ok(Math.abs(halfway.w - Math.SQRT1_2) < 1e-8);
+  assert.deepEqual(interpolateRotation(a, { x: 0, y: 0, z: 0, w: -1 }, .5), a);
+  const before = sample(0, 0), after = sample(.2, 3000);
+  before.players[0].rotation = a;
+  after.players[0].rotation = b;
+  assert.deepEqual(interpolatedSample([before, after], .1, .2)?.players[0].rotation, a);
+  after.players[0].x = 100;
+  assert.deepEqual(interpolatedSample([before, after], .1, .2)?.players[0].rotation, halfway);
+});
 
 test("interpola posiciones a medio fotograma sin inventar turbo o toques", () => {
   const samples = [sample(0, -800), sample(.2, -400, 2)];

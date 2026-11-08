@@ -1,4 +1,17 @@
-import type { Position } from "./telemetry.ts";
+import type { Position, Rotation } from "./telemetry.ts";
+
+export function carPoint(local: Position, position: Position, rotation?: Rotation): Position {
+  if (!rotation) return { x: position.x + local.x, y: position.y + local.y, z: position.z + local.z };
+  const { x, y, z, w } = rotation;
+  const tx = 2 * (y * local.z - z * local.y);
+  const ty = 2 * (z * local.x - x * local.z);
+  const tz = 2 * (x * local.y - y * local.x);
+  return {
+    x: position.x + local.x + w * tx + y * tz - z * ty,
+    y: position.y + local.y + w * ty + z * tx - x * tz,
+    z: position.z + local.z + w * tz + x * ty - y * tx,
+  };
+}
 
 export interface ReplayCamera { yaw: number; pitch: number; distance: number }
 export const DEFAULT_REPLAY_CAMERA: ReplayCamera = { yaw: -.8, pitch: .85, distance: 14500 };

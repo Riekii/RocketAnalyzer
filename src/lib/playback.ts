@@ -1,4 +1,25 @@
-import type { Position, PositionSample } from "./telemetry.ts";
+import type { Position, PositionSample, Rotation } from "./telemetry.ts";
+
+export function initialPlaybackTime(samples: PositionSample[], playerCount: number): number {
+  return (samples.find((sample) => sample.ball && sample.players.length >= playerCount && playerCount > 0)
+    ?? samples.find((sample) => sample.ball && sample.players.length > 0)
+    ?? samples.find((sample) => sample.players.length > 0)
+    ?? samples[0])?.time ?? 0;
+}
+
+export function interpolateRotation(a: Rotation, b: Rotation, ratio: number): Rotation {
+  let dot = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+  const sign = dot < 0 ? -1 : 1;
+  dot = Math.min(1, Math.abs(dot));
+  const angle = Math.acos(dot);
+  const sine = Math.sin(angle);
+  const first = dot > .9995 ? 1 - ratio : Math.sin((1 - ratio) * angle) / sine;
+  const second = (dot > .9995 ? ratio : Math.sin(ratio * angle) / sine) * sign;
+  const result = { x: a.x * first + b.x * second, y: a.y * first + b.y * second,
+    z: a.z * first + b.z * second, w: a.w * first + b.w * second };
+  const length = Math.hypot(result.x, result.y, result.z, result.w);
+  return { x: result.x / length, y: result.y / length, z: result.z / length, w: result.w / length };
+}
 
 export function playbackTime(from: number, elapsedMilliseconds: number, speed: number, end: number): number {
   return Math.min(end, from + Math.max(0, elapsedMilliseconds) / 1000 * speed);
@@ -34,7 +55,11 @@ export function interpolatedSample(samples: PositionSample[], time: number, inte
     ball: before.ball && after.ball ? blend(before.ball, after.ball, 6500) : before.ball,
     players: before.players.map((point) => {
       const next = after.players.find((other) => other.id === point.id);
-      return next ? { ...point, ...blend(point, next, 2300) } : point;
+      if (!next) return point;
+      const position = blend(point, next, 2300);
+      return { ...point, ...position,
+        ...(position !== point && point.rotation && next.rotation
+          ? { rotation: interpolateRotation(point.rotation, next.rotation, ratio) } : {}) };
     }),
   };
 }

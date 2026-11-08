@@ -100,6 +100,17 @@ test("lee los nombres de equipo y prioriza los nombres personalizados de la repe
   assert.equal(replayLabel({ ...demoReplay, telemetry }), "Equipo Uno vs Equipo Dos");
 });
 
+test("extrae y normaliza la rotación real del coche sin inventar valores ausentes", () => {
+  const raw = fixture();
+  raw.network_frames.frames[0].updated_actors.push(update(20, "TAGame.RBActor_TA:ReplicatedRBState", {
+    RigidBody: { location: { x: 10, y: 20, z: 30 }, rotation: { x: 0, y: 0, z: .7, w: .7 } },
+  }));
+  const point = extractTelemetry(raw, demoReplay.players, "cs_p").samples[0].players[0];
+  assert.ok(Math.abs(point.rotation!.z - Math.SQRT1_2) < 1e-8);
+  assert.ok(Math.abs(point.rotation!.w - Math.SQRT1_2) < 1e-8);
+  assert.equal(extractTelemetry(fixture(), demoReplay.players, "cs_p").samples[0].players[0].rotation, undefined);
+});
+
 test("asocia nombres al TeamIndex aunque llegue después del nombre y no mezcla jugadores", () => {
   const raw = fixture();
   raw.objects = [...objects, "TAGame.Team_TA"];

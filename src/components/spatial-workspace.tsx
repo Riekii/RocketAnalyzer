@@ -7,7 +7,7 @@ import {
   distance, heatmapFor, playerDistances, TACTICAL_LABELS, type SpatialAnalysis,
 } from "@/lib/telemetry";
 import { FieldMap, TEAM_COLORS } from "./field-map";
-import { interpolatedSample, playbackTime, sampleIndexAt } from "@/lib/playback";
+import { initialPlaybackTime, interpolatedSample, playbackTime, sampleIndexAt } from "@/lib/playback";
 import { detailedStats } from "@/lib/detailed-stats";
 import { Replay3D } from "./replay-3d";
 
@@ -17,8 +17,8 @@ const meters = (units: number | null) => units === null ? "N/D" : `${(units / 10
 export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loading = false }: {
   replay: Replay; analysis: SpatialAnalysis; selectedId: string; onSelect: (id: string) => void; loading?: boolean;
 }) {
-  const [time, setTime] = useState(0);
-  const clock = useRef(0);
+  const [time, setTime] = useState(() => initialPlaybackTime(replay.telemetry.samples, replay.players.length));
+  const clock = useRef(time);
   const animation = useRef<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);

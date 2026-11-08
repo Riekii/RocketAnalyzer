@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { Replay } from "@/lib/replay";
 import { formatTime } from "@/lib/replay";
 import { BOOST_PADS, FIELD, type Position, type PositionSample } from "@/lib/telemetry";
-import { DEFAULT_REPLAY_CAMERA, orbitCamera, projectPosition, zoomCamera, type ReplayCamera } from "@/lib/replay-3d";
+import { carPoint, DEFAULT_REPLAY_CAMERA, orbitCamera, projectPosition, zoomCamera, type ReplayCamera } from "@/lib/replay-3d";
 import { TEAM_COLORS } from "./field-map";
 
 function drawScene(context: CanvasRenderingContext2D, width: number, height: number,
@@ -87,8 +87,8 @@ function drawScene(context: CanvasRenderingContext2D, width: number, height: num
     const shadow = project({ ...point, z: 0 });
     if (shadow) {
       context.beginPath();
-      context.ellipse(shadow.x, shadow.y, Math.max(3, shadow.scale * 160),
-        Math.max(2, shadow.scale * 65), 0, 0, Math.PI * 2);
+      context.ellipse(shadow.x, shadow.y, Math.max(3, shadow.scale * 105),
+        Math.max(2, shadow.scale * 50), 0, 0, Math.PI * 2);
       context.fillStyle = "#0007";
       context.fill();
       if (point.z > 250) line([{ ...point, z: 0 }, point], "#ffffff25");
@@ -109,17 +109,30 @@ function drawScene(context: CanvasRenderingContext2D, width: number, height: num
       continue;
     }
     if (!player) continue;
-    const vertices = [0, 90].flatMap((z) => [
-      { x: point.x - 140, y: point.y - 85, z: point.z + z },
-      { x: point.x + 140, y: point.y - 85, z: point.z + z },
-      { x: point.x + 140, y: point.y + 85, z: point.z + z },
-      { x: point.x - 140, y: point.y + 85, z: point.z + z },
-    ]);
-    const faces = [[0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7], [4, 5, 6, 7]]
-      .map((indices) => indices.map((index) => vertices[index]))
-      .sort((a, b) => b.reduce((total, point) => total + (project(point)?.depth ?? 0), 0)
-        - a.reduce((total, point) => total + (project(point)?.depth ?? 0), 0));
-    for (const face of faces) polygon(face, TEAM_COLORS[player.team], player.id === selectedId ? "#fff" : "#132134");
+    const rotation = sample?.players.find((car) => car.id === player.id)?.rotation;
+    const transform = (local: Position) => carPoint(local, point, rotation);
+    const parts = [
+      { min: [-100, -48, -5], max: [100, 48, 32], color: TEAM_COLORS[player.team] },
+      { min: [-50, -39, 32], max: [35, 39, 65], color: "#a4def0" },
+      { min: [-103, -55, 35], max: [-78, 55, 43], color: TEAM_COLORS[player.team] },
+      ...[-65, 65].flatMap((x) => [-53, 53].map((y) => ({
+        min: [x - 22, y - 10, -17], max: [x + 22, y + 10, 22], color: "#17202a",
+      }))),
+      ...[-32, 32].map((y) => ({ min: [99, y - 9, 10], max: [103, y + 9, 23], color: "#fffbc2" })),
+      ...[-32, 32].map((y) => ({ min: [-103, y - 9, 10], max: [-99, y + 9, 23], color: "#ff6570" })),
+    ];
+    const faces = parts.flatMap(({ min, max, color }) => {
+      const vertices = [min[2], max[2]].flatMap((z) => [
+        transform({ x: min[0], y: min[1], z }), transform({ x: max[0], y: min[1], z }),
+        transform({ x: max[0], y: max[1], z }), transform({ x: min[0], y: max[1], z }),
+      ]);
+      return [[0, 1, 2, 3], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7], [4, 5, 6, 7]]
+        .map((indices) => ({ points: indices.map((index) => vertices[index]), color }));
+    }).sort((a, b) => b.points.reduce((total, point) => total + (project(point)?.depth ?? 0), 0)
+      - a.points.reduce((total, point) => total + (project(point)?.depth ?? 0), 0));
+    for (const face of faces) polygon(face.points, face.color, player.id === selectedId ? "#dcefff" : "#132134");
+    if (rotation) line([transform({ x: 115, y: 0, z: 15 }), transform({ x: 220, y: 0, z: 15 })],
+      TEAM_COLORS[player.team], 2);
     const label = project({ ...point, z: point.z + 230 });
     if (label) {
       context.font = "600 12px Segoe UI, sans-serif";
@@ -146,6 +159,8 @@ export function Replay3D({ replay, sample, selectedId, time, playing, speed, onS
   useEffect(() => {
     const element = canvas.current;
     if (!element) return;
+    const bounds = element.getBoundingClientRect();
+    setSize({ width: bounds.width, height: bounds.height });
     const observer = new ResizeObserver(([entry]) => {
       setSize({ width: entry.contentRect.width, height: entry.contentRect.height });
     });
@@ -174,6 +189,7 @@ export function Replay3D({ replay, sample, selectedId, time, playing, speed, onS
     drawScene(context, size.width, size.height, camera, replay, sample, selectedId);
   }, [size, camera, replay, sample, selectedId]);
   const available = replay.telemetry.standardField && replay.telemetry.samples.length > 0;
+  const selected = sample?.players.find((point) => point.id === selectedId);
   return <section className="panel replay-3d" aria-labelledby={titleId}>
     <div className="section-heading"><h2 id={titleId}>Reproducción 3D · {formatTime(time)}</h2>
       <button className="button" onClick={() => setCamera(DEFAULT_REPLAY_CAMERA)}>Restablecer cámara</button></div>
@@ -214,8 +230,13 @@ export function Replay3D({ replay, sample, selectedId, time, playing, speed, onS
       <button className="button" aria-label="Acercar cámara" onClick={() => setCamera((camera) => zoomCamera(camera, -150))}>+</button>
       <button className="button" aria-label="Alejar cámara" onClick={() => setCamera((camera) => zoomCamera(camera, 150))}>−</button>
     </div>
+    {selected && <p className="note replay-3d-note">
+      {replay.players.find((player) => player.id === selectedId)?.name} · posición:
+      {" "}X {(selected.x / 100).toFixed(1)} m · Y {(selected.y / 100).toFixed(1)} m · altura {(selected.z / 100).toFixed(1)} m
+      {" · "}{selected.rotation ? "Orientación real; la línea frontal indica hacia dónde apunta el coche." : "Orientación no disponible."}
+    </p>}
     <p className="note replay-3d-note">Arrastra para girar; rueda o botones +/− para acercar. Teclado: flechas y +/−.
       Sincronizado con el campo 2D. Posiciones y alturas reales; coches y estadio simplificados.
-      No se reconstruye la orientación de los coches ni se inventan posiciones ausentes.</p>
+      Orientación real cuando está disponible; no se inventan posiciones ausentes.</p>
   </section>;
 }
