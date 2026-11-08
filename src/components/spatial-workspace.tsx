@@ -9,6 +9,7 @@ import {
 import { FieldMap, TEAM_COLORS } from "./field-map";
 import { interpolatedSample, playbackTime, sampleIndexAt } from "@/lib/playback";
 import { detailedStats } from "@/lib/detailed-stats";
+import { Replay3D } from "./replay-3d";
 
 const percentage = (seconds: number, total: number) => total > 0 ? `${Math.round(seconds / total * 100)} %` : "N/D";
 const meters = (units: number | null) => units === null ? "N/D" : `${(units / 100).toFixed(1)} m`;
@@ -84,6 +85,14 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
   function seek(time: number) {
     pause();
     setPosition(Math.max(samples[0]?.time ?? 0, Math.min(time, samples.at(-1)?.time ?? 0)));
+  }
+
+  function togglePlayback() {
+    if (playing) pause();
+    else {
+      if (time >= (samples.at(-1)?.time ?? 0)) setPosition(samples[0]?.time ?? 0);
+      setPlaying(true);
+    }
   }
 
   return (
@@ -163,13 +172,7 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
           </div>
         </div>
         <div className="playback">
-          <button className="button" disabled={!samples.length} aria-label={playing ? "Pausar" : "Reproducir posiciones"} onClick={() => {
-            if (playing) pause();
-            else {
-              if (time >= (samples.at(-1)?.time ?? 0)) setPosition(samples[0]?.time ?? 0);
-              setPlaying(true);
-            }
-          }}>{playing ? "Pausa" : "Reproducir"}</button>
+          <button className="button" disabled={!samples.length} aria-label={playing ? "Pausar" : "Reproducir posiciones"} onClick={togglePlayback}>{playing ? "Pausa" : "Reproducir"}</button>
           <div className="playback-timeline">
           <input type="range" min={startTime} max={endTime} step="any" value={time} disabled={!samples.length}
             aria-label="Instante de la repetición" aria-valuetext={samples.length ? `${time.toFixed(2)} segundos` : "Sin datos"}
@@ -307,6 +310,8 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
           <p className="note">{details[selectedId].seconds.toFixed(1)} s de juego con posiciones · {details[selectedId].boostSeconds.toFixed(1)} s con turbo · {details[selectedId].contactSeconds.toFixed(1)} s con balón y contador de toques disponibles.</p>
         </div>
       </section>
+      <Replay3D replay={replay} sample={sample} selectedId={selectedId} time={time} playing={playing} speed={speed}
+        onSeek={seek} onToggle={togglePlayback} onSpeed={(next) => { if ([1, 1.5, 2, 3].includes(next)) setSpeed(next); }} />
     </div>
   );
 }

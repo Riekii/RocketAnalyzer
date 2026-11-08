@@ -186,6 +186,14 @@ tbody tr:last-child > * { border-bottom: 0; }
 .goal-timestamps button span { overflow-wrap: anywhere; min-width: 0; }
 .goal-timestamps time { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .detailed-statistics { grid-column: 1 / -1; }
+.replay-3d { grid-column: 1 / -1; }
+.replay-3d-viewport { position: relative; }
+.replay-3d canvas { display: block; width: 100%; height: clamp(300px, 50vw, 540px); touch-action: none; cursor: grab; }
+.replay-3d canvas:active { cursor: grabbing; }
+.replay-3d-message { position: absolute; inset: 0; display: grid; place-content: center; padding: 20px; text-align: center; pointer-events: none; }
+.replay-3d-note { padding: 0 14px 12px; }
+.replay-3d .playback { flex-wrap: wrap; }
+.replay-3d .playback input { flex: 1 1 120px; }
 .detail-notes { padding: 10px 14px; border-top: 1px solid var(--border); }
 .detail-notes h3 { font-size: 12px; margin-block: 10px 6px; }
 .detail-notes p + p { margin-top: 7px; }
