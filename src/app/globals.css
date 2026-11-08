@@ -168,6 +168,14 @@ tbody tr:last-child > * { border-bottom: 0; }
 .playback input { min-width: 80px; flex: 1; accent-color: var(--blue); min-height: 28px; cursor: pointer; }
 .playback > span { white-space: nowrap; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .playback select { font-size: 11px; padding: 5px; }
+.playback-timeline { flex: 1; min-width: 80px; }
+.playback-timeline input { display: block; width: 100%; margin: 0; }
+.goal-markers { position: relative; height: 8px; margin: 0 8px; }
+.goal-markers i { position: absolute; width: 3px; height: 8px; transform: translateX(-50%); border-radius: 2px; }
+.goal-timestamps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 14px 10px; }
+.goal-timestamps button { display: flex; gap: 6px; max-width: 100%; padding: 4px 7px; background: #101922; border: 1px solid; border-radius: 5px; font-size: 11px; }
+.goal-timestamps button span { overflow-wrap: anywhere; min-width: 0; }
+.goal-timestamps time { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .detailed-statistics { grid-column: 1 / -1; }
 .detail-notes { padding: 10px 14px; border-top: 1px solid var(--border); }
 .detail-notes h3 { font-size: 12px; margin-block: 10px 6px; }

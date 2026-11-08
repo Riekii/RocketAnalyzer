@@ -127,6 +127,8 @@ export function normalizeReplay(raw: unknown, filename: string, id: string): Rep
   const fps = number(props.RecordFPS);
   const frames = integer(props.NumFrames);
   const duration = fps !== null && fps > 0 && frames !== null ? frames / fps : null;
+  const networkFrames = object(root?.network_frames)?.frames;
+  const firstFrameTime = Array.isArray(networkFrames) ? number(object(networkFrames[0])?.time) : null;
   const goals: Goal[] = [];
   if (Array.isArray(props.Goals)) {
     for (const entry of props.Goals) {
@@ -141,7 +143,12 @@ export function normalizeReplay(raw: unknown, filename: string, id: string): Rep
         player: text(row.PlayerName) ?? "Autor no disponible",
         team: side,
         frame,
-        seconds: fps !== null && fps > 0 ? frame / fps : null,
+        seconds: (() => {
+          if (!Array.isArray(networkFrames)) return fps !== null && fps > 0 ? frame / fps : null;
+          const time = number(object(networkFrames[frame])?.time);
+          return time !== null && firstFrameTime !== null && time >= firstFrameTime
+            ? Math.round((time - firstFrameTime) * 1000) / 1000 : null;
+        })(),
       });
     }
     goals.sort((a, b) => a.frame - b.frame);

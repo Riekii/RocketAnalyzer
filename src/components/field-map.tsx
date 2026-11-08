@@ -22,12 +22,19 @@ export const FieldMap = memo(function FieldMap({ replay, sample, heat, selectedI
   small?: boolean;
 }) {
   const clip = useId();
+  const ballGlow = useId();
   const maximum = Math.max(0, ...(heat ?? []));
   const pairs = !heat ? playerDistances(sample, replay.players).filter((pair) => pair.team !== null) : [];
   return (
     <svg className={`field-map ${small ? "mini-field" : ""}`} viewBox="0 0 570 456" role="img"
       aria-label={heat ? "Mapa de calor: más intensidad indica más tiempo observado en esa zona." : "Posiciones en el instante seleccionado. Los números corresponden a los jugadores de la tabla."}>
-      <defs><clipPath id={clip}><rect x="35" y="28" width="500" height="400" rx="38" /></clipPath></defs>
+      <defs>
+        <clipPath id={clip}><rect x="35" y="28" width="500" height="400" rx="38" /></clipPath>
+        <radialGradient id={ballGlow}>
+          <stop offset="0%" stopColor="#fffbc2" stopOpacity=".9" />
+          <stop offset="100%" stopColor="#fff36b" stopOpacity="0" />
+        </radialGradient>
+      </defs>
       <rect x="35" y="28" width="500" height="400" rx="38" fill="#16292a" stroke="#64817e" strokeWidth="2" />
       <g clipPath={`url(#${clip})`}>
         <rect x="35" y="28" width="250" height="400" fill="#244e731f" />
@@ -67,10 +74,6 @@ export const FieldMap = memo(function FieldMap({ replay, sample, heat, selectedI
             </text>
           </g>;
         })}
-        {sample?.ball && !heat && (() => {
-          const [cx, cy] = coordinates(sample.ball);
-          return <circle cx={cx} cy={cy} r="7" fill="#fff" stroke="#364253" strokeWidth="2"><title>Balón · altura {(sample.ball.z / 100).toFixed(1)} m</title></circle>;
-        })()}
         {!heat && sample?.players.map((point) => {
           const index = replay.players.findIndex((player) => player.id === point.id);
           const player = replay.players[index];
@@ -86,6 +89,15 @@ export const FieldMap = memo(function FieldMap({ replay, sample, heat, selectedI
             <title>{player.name} · {point.boost ?? "N/D"} % turbo · z {(point.z / 100).toFixed(1)} m</title>
           </g>;
         })}
+        {sample?.ball && !heat && (() => {
+          const [cx, cy] = coordinates(sample.ball);
+          return <g pointerEvents="none">
+            <title>Balón · altura {(sample.ball.z / 100).toFixed(1)} m</title>
+            <circle cx={cx} cy={cy} r="21" fill={`url(#${ballGlow})`} />
+            <circle cx={cx} cy={cy} r="9" fill="#fffef0" stroke="#fff36b" strokeWidth="3" />
+            <circle cx={cx - 2} cy={cy - 2} r="3" fill="#fff" />
+          </g>;
+        })()}
       </g>
       <path d="M35 187H19v82h16" stroke="#6bb8ff" strokeWidth="4" fill="none" />
       <path d="M535 187h16v82h-16" stroke="#ffae6c" strokeWidth="4" fill="none" />

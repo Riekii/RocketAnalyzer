@@ -50,6 +50,24 @@ test("rechaza datos ajenos a Rocket League y juegos no compatibles", () => {
   }
 });
 
+test("sitúa los goles con el tiempo real de los fotogramas, no con los FPS nominales", () => {
+  const replay = normalizeReplay({
+    ...fixture({ Goals: [{ PlayerName: "Azul", PlayerTeam: 0, frame: 2 }] }),
+    network_frames: { frames: [{ time: 12.5 }, { time: 12.54 }, { time: 14.875 }] },
+  }, "variable.replay", "test");
+  assert.equal(replay.goals[0].seconds, 2.375);
+});
+
+test("no inventa tiempos de gol si el fotograma de red falta o tiene tiempo inválido", () => {
+  for (const frames of [[], [{ time: 10 }], [{ time: 10 }, { time: 9 }], [{ time: 10 }, { time: null }]]) {
+    const replay = normalizeReplay({
+      ...fixture({ Goals: [{ PlayerName: "Azul", PlayerTeam: 0, frame: 1 }] }),
+      network_frames: { frames },
+    }, "partial.replay", "test");
+    assert.equal(replay.goals[0].seconds, null);
+  }
+});
+
 test("rechaza cabeceras sin jugadores, registros dañados y arrays excesivos", () => {
   for (const PlayerStats of [undefined, [], [null], Array(65).fill({})]) {
     assert.throws(() => normalizeReplay(fixture({ PlayerStats }), "x.replay", "x"), ReplayValidationError);

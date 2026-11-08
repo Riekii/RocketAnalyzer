@@ -25,6 +25,11 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
   const [eventTab, setEventTab] = useState<"errors" | "boost" | "demos">("errors");
   const tabsId = useId();
   const samples = replay.telemetry.samples;
+  const startTime = samples[0]?.time ?? 0;
+  const endTime = samples.at(-1)?.time ?? 0;
+  const goalPosition = (seconds: number | null) => seconds !== null && endTime > startTime
+    && seconds >= startTime && seconds <= endTime
+    ? (seconds - startTime) / (endTime - startTime) * 100 : null;
   const index = sampleIndexAt(samples, time);
   const observedSample = samples[index];
   const sample = interpolatedSample(samples, time, replay.telemetry.sampleInterval);
@@ -165,7 +170,8 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
               setPlaying(true);
             }
           }}>{playing ? "Pausa" : "Reproducir"}</button>
-          <input type="range" min={samples[0]?.time ?? 0} max={samples.at(-1)?.time ?? 0} step="any" value={time} disabled={!samples.length}
+          <div className="playback-timeline">
+          <input type="range" min={startTime} max={endTime} step="any" value={time} disabled={!samples.length}
             aria-label="Instante de la repetición" aria-valuetext={samples.length ? `${time.toFixed(2)} segundos` : "Sin datos"}
             onPointerDown={pause}
             onKeyDown={(event) => {
@@ -181,6 +187,14 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
               }
             }}
             onChange={(event) => seek(Number(event.target.value))} />
+          <div className="goal-markers" aria-hidden="true">
+            {replay.goals.map((goal, number) => {
+              const position = goalPosition(goal.seconds);
+              return position === null ? null : <i key={`${goal.frame}-${number}`}
+                style={{ left: `${position}%`, background: TEAM_COLORS[goal.team] }} />;
+            })}
+          </div>
+          </div>
           <select aria-label="Velocidad de reproducción" value={speed} onChange={(event) => {
             const next = Number(event.target.value);
             if ([1, 1.5, 2, 3].includes(next)) setSpeed(next);
@@ -188,6 +202,18 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
             <option value={1}>×1</option><option value={1.5}>×1,5</option><option value={2}>×2</option><option value={3}>×3</option>
           </select>
           <span>{formatTime(samples.length ? time : null)} / {formatTime(samples.at(-1)?.time ?? null)}</span>
+        </div>
+        <div className="goal-timestamps" role="group" aria-label="Goles: tiempos desde el inicio de la grabación">
+          <span className="note">Goles · tiempo de grabación</span>
+          {replay.goals.map((goal, number) => <button key={`${goal.frame}-${number}`}
+            disabled={goalPosition(goal.seconds) === null}
+            onClick={() => { if (goal.seconds !== null) seek(goal.seconds); }}
+            title={`Gol de ${goal.player} · ${formatTime(goal.seconds)} desde el inicio de la grabación`}
+            style={{ borderColor: TEAM_COLORS[goal.team] }}>
+            <time>{formatTime(goal.seconds)}</time>
+            <span className={goal.team === 0 ? "text-blue" : "text-orange"}>{goal.player}</span>
+          </button>)}
+          {!replay.goals.length && <span className="note">Sin goles registrados.</span>}
         </div>
         <div className="replay-events">
           <div className="event-tabs" role="tablist" aria-label="Eventos de la repetición">
