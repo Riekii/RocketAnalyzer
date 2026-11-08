@@ -205,7 +205,7 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
               return <tr key={player.id} className={selectedId === player.id ? "selected-row" : ""}>
                 <th scope="row"><button className="player-name" onClick={() => onSelect(player.id)} aria-pressed={selectedId === player.id}>
                   <span className="player-number" style={{ background: TEAM_COLORS[player.team] }}>{number + 1}</span>
-                  <span className="roster-name">{player.name}<small className={player.team === 0 ? "text-blue" : "text-orange"}>{player.team === 0 ? "Azul" : "Naranja"}</small></span>
+                  <span className="roster-name" style={{ color: TEAM_COLORS[player.team] }}>{player.name}<small className={player.team === 0 ? "text-blue" : "text-orange"}>{player.team === 0 ? "Azul" : "Naranja"}</small></span>
                 </button></th>
                 <td>{player.score ?? "N/D"}</td><td>{player.goals ?? "N/D"}</td><td>{player.assists ?? "N/D"}</td><td>{player.saves ?? "N/D"}</td><td>{player.shots ?? "N/D"}</td>
                 <td>{player.shooting === null ? "N/D" : `${player.shooting} %`}</td>
@@ -394,7 +394,7 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
             </tr></thead>
             <tbody>{sortedDetailRows.map(({ player, row, spatial, hasPads, hasAir, hasContact, values }) => {
               return <tr key={player.id} className={player.id === selectedId ? "selected-row" : ""}>
-                <th scope="row"><button className="player-name" onClick={() => onSelect(player.id)} aria-pressed={player.id === selectedId}>{player.name}</button></th>
+                <th scope="row"><button className="player-name" onClick={() => onSelect(player.id)} aria-pressed={player.id === selectedId} style={{ color: TEAM_COLORS[player.team] }}>{player.name}</button></th>
                 <td className={extremeClass(detailRows.map((item) => item.values.meanBoost), values.meanBoost)}>{row.meanBoost === null ? "N/D" : `${Math.round(row.meanBoost)} %`}</td>
                 <td className={extremeClass(detailRows.map((item) => item.values.empty), values.empty)}>{row.boostSeconds > 0 ? `${row.emptyBoostSeconds.toFixed(1)} s (${percentage(row.emptyBoostSeconds, row.boostSeconds)})` : "N/D"}</td>
                 <td className={extremeClass(detailRows.map((item) => item.values.full), values.full)}>{row.boostSeconds > 0 ? `${row.fullBoostSeconds.toFixed(1)} s (${percentage(row.fullBoostSeconds, row.boostSeconds)})` : "N/D"}</td>
