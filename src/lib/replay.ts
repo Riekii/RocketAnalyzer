@@ -43,6 +43,14 @@ export interface Replay {
 
 export class ReplayValidationError extends Error {}
 
+export function teamName(replay: Replay, side: Team): string {
+  return replay.telemetry.teamNames?.[side] ?? (side === 0 ? "Azul (sin nombre)" : "Naranja (sin nombre)");
+}
+
+export function replayLabel(replay: Replay): string {
+  return `${teamName(replay, 0)} vs ${teamName(replay, 1)}`;
+}
+
 function object(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>

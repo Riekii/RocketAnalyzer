@@ -6,6 +6,8 @@ import {
 
 interface Actor {
   kind: string;
+  teamName?: string;
+  customTeamName?: string;
   name?: string;
   team?: Team;
   teamActor?: number;
@@ -54,6 +56,7 @@ export function extractTelemetry(raw: unknown, players: Player[], map: string): 
   const objects = root.objects;
   const actors = new Map<number, Actor>();
   const telemetry: Telemetry = {
+    teamNames: [null, null],
     samples: [], pickups: [], pickupsObserved: false, demolitions: [],
     demolitionsObserved: objects.some((name) => typeof name === "string" && /:ReplicatedDemolish/.test(name)),
     standardField: isStandardField(map),
@@ -147,6 +150,12 @@ export function extractTelemetry(raw: unknown, players: Player[], map: string): 
         const actor = id === null ? undefined : actors.get(id);
         if (!row || !actor || !attr || id === null) continue;
         const property = objectName(row.object_id);
+        if (property === "Engine.TeamInfo:TeamName" && typeof attr.String === "string") {
+          actor.teamName = attr.String.trim() || undefined;
+        }
+        if (property === "TAGame.Team_TA:CustomTeamName" && typeof attr.String === "string") {
+          actor.customTeamName = attr.String.trim() || undefined;
+        }
         if (/:ReplicatedDemolish/.test(property)) {
           const data = record(attr.DemolishExtended ?? attr.DemolishFx ?? attr.Demolish);
           if (data) pendingDemolitions.push({ data, extended: attr.DemolishExtended !== undefined });
@@ -241,6 +250,11 @@ export function extractTelemetry(raw: unknown, players: Player[], map: string): 
         position: knownPad ?? position,
         size: knownPad ? knownPad.large ? "large" : "small" : "unknown",
       });
+    }
+    for (const actor of actors.values()) {
+      if (actor.team === undefined || !/(?:Team|TeamInfo)(?:[._0-9]|$)/.test(actor.kind)) continue;
+      const name = actor.customTeamName ?? actor.teamName;
+      if (name && telemetry.teamNames) telemetry.teamNames[actor.team] = name;
     }
     if (time + 0.001 < nextSample) continue;
     nextSample = (Math.floor((time + 0.001) / SAMPLE_INTERVAL) + 1) * SAMPLE_INTERVAL;

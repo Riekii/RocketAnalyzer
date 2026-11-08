@@ -8,6 +8,7 @@ import {
   nearestPad, playerDistances, sampleSignals, type PositionSample,
 } from "../src/lib/telemetry.ts";
 import type { Replay } from "../src/lib/replay.ts";
+import { replayLabel } from "../src/lib/replay.ts";
 
 const objects = [
   "Archetypes.Teams.Team0", "Archetypes.Teams.Team1", "TAGame.PRI_TA",
@@ -24,6 +25,9 @@ const objects = [
   "TAGame.PRI_TA:BallTouches",
   "TAGame.Car_TA:ReplicatedDemolishExtended",
   "TAGame.Car_TA:ReplicatedDemolish",
+  "Engine.TeamInfo:TeamName",
+  "TAGame.Team_TA:CustomTeamName",
+  "Engine.TeamInfo:TeamIndex",
 ];
 function update(id: number, property: string, attribute: Record<string, unknown>) {
   return { actor_id: id, object_id: objects.indexOf(property), attribute };
@@ -78,9 +82,43 @@ test("reconstruye identidad, posiciones en uu y turbo desde actores de boxcars",
   assert.deepEqual(telemetry.samples[0].players[0], {
     id: demoReplay.players[0].id, x: -3072, y: -4096, z: 17, boost: 50,
   });
+
   assert.equal(telemetry.samples[0].active, false);
   assert.equal(telemetry.samples[11].active, true);
   assert.equal(telemetry.samples[10].ball?.z, 93);
+});
+
+test("lee los nombres de equipo y prioriza los nombres personalizados de la repetición", () => {
+  const raw = fixture();
+  raw.network_frames.frames[0].updated_actors.push(
+    update(1, "Engine.TeamInfo:TeamName", { String: "Blue" }),
+    update(1, "TAGame.Team_TA:CustomTeamName", { String: "  Equipo Uno  " }),
+    update(2, "TAGame.Team_TA:CustomTeamName", { String: "Equipo Dos" }),
+  );
+  const telemetry = extractTelemetry(raw, demoReplay.players, "cs_p");
+  assert.deepEqual(telemetry.teamNames, ["Equipo Uno", "Equipo Dos"]);
+  assert.equal(replayLabel({ ...demoReplay, telemetry }), "Equipo Uno vs Equipo Dos");
+});
+
+test("asocia nombres al TeamIndex aunque llegue después del nombre y no mezcla jugadores", () => {
+  const raw = fixture();
+  raw.objects = [...objects, "TAGame.Team_TA"];
+  raw.network_frames.frames[0].new_actors.push({ actor_id: 70, object_id: raw.objects.length - 1 });
+  raw.network_frames.frames[0].updated_actors.push(
+    update(70, "TAGame.Team_TA:CustomTeamName", { String: "Equipo Naranja" }),
+    update(70, "Engine.TeamInfo:TeamIndex", { Int: 1 }),
+    update(10, "TAGame.Team_TA:CustomTeamName", { String: "No es un equipo" }),
+  );
+  const telemetry = extractTelemetry(raw, demoReplay.players, "cs_p");
+  assert.deepEqual(telemetry.teamNames, [null, "Equipo Naranja"]);
+});
+
+test("los nombres ausentes se indican sin inventar equipos ni usar nombres de jugadores", () => {
+  const telemetry = extractTelemetry(fixture(), demoReplay.players, "cs_p");
+  assert.deepEqual(telemetry.teamNames, [null, null]);
+  assert.equal(replayLabel({ ...demoReplay, telemetry }), "Azul (sin nombre) vs Naranja (sin nombre)");
+  assert.equal(replayLabel({ ...demoReplay, telemetry: emptyTelemetry("Sin datos") }),
+    "Azul (sin nombre) vs Naranja (sin nombre)");
 });
 
 test("registra recogidas reales, evita duplicados y estima el pad por proximidad", () => {

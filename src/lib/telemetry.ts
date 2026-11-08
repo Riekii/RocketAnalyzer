@@ -22,6 +22,7 @@ export interface Demolition {
   cause: "player" | "self" | "goal";
 }
 export interface Telemetry {
+  teamNames?: [string | null, string | null];
   samples: PositionSample[];
   pickups: BoostPickup[];
   pickupsObserved: boolean;

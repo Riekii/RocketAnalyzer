@@ -36,7 +36,9 @@ npm run build
 npm start
 ```
 
-La aplicación arranca vacía, sin partidos ficticios. Arrastra una repetición o pulsa **Subir replay**, arriba a la derecha. Una pantalla de carga bloquea las interacciones mientras se reciben y preparan los datos. Si falla la carga, se muestra el error y se conservan los datos anteriores.
+La aplicación arranca vacía, sin partidos ficticios. Arrastra uno o varios archivos o pulsa **Subir replays**, arriba a la derecha, y selecciona varios. Se analizan en orden, uno a uno, con progreso por archivo para no saturar el lector del servidor. Si un archivo falla, se informa con su nombre y se continúa con los restantes, conservando los partidos anteriores.
+
+El listado **Partidos** permite elegir qué repetición ver. Cada entrada muestra los nombres de equipo guardados en la repetición, el resultado y la fecha; se prioriza `TAGame.Team_TA:CustomTeamName` sobre `Engine.TeamInfo:TeamName`. Si faltan nombres se indica **Azul (sin nombre)** o **Naranja (sin nombre)**, sin inventarlos ni sustituirlos por jugadores. Las entradas están numeradas para distinguir partidos entre los mismos equipos. Se conservan solo en memoria durante esta sesión, sin el límite anterior de ocho; recargar la página vacía el listado.
 
 ## Despliegue en un servidor Linux con Docker
 
@@ -83,7 +85,7 @@ Si Documentos está sincronizado con OneDrive, busca esa misma carpeta dentro de
 
 ## Funcionalidades
 
-- Subida de un archivo cada vez, hasta **32 MiB** (etiquetado como 32 MB en la interfaz).
+- Selección y arrastre de varios archivos, analizados uno a uno, hasta **32 MiB por archivo** (etiquetado como 32 MB en la interfaz).
 - Cabecera compacta con marcador y fecha a la izquierda; subida a la derecha. Conserva título, mapa interno y duración aproximada de la grabación sin una segunda tarjeta de resultado.
 - Puntos, goles, asistencias, paradas, tiros y conversión de tiros por jugador.
 - Tabla de todos los jugadores con turbo y distancia al compañero más cercano en el instante seleccionado, y recogidas de pads grandes, pequeños y sin tipo de toda la grabación.
@@ -98,7 +100,7 @@ Si Documentos está sincronizado con OneDrive, busca esa misma carpeta dentro de
 - La pestaña Errores reúne posibles fallos al balón y señales tácticas sostenidas al menos 2 s: proximidad en suelo (<7 m), aislamiento (>40 m), doble presión cerca de un balón bajo (<10 m) y falta de cobertura (nadie al menos 5 m por detrás del balón en campo propio). Se excluyen pausas identificadas, saques, equipos incompletos y mapas no verificados. Son indicios a revisar, no errores confirmados ni recomendaciones.
 - Boost contiene los eventos de recogida. El tipo y la ubicación del pad se estiman por proximidad cuando se verifica un campo estándar.
 - Demos muestra los eventos replicados `Demolish`, `DemolishFx` y `DemolishExtended`, con atacante, víctima y totales observados hechos/recibidos por jugador. Se distingue autodemolición y explosión de gol, sin contarlas como demos hechas por un atacante. Se conserva la identidad anterior al fotograma si la víctima pierde el PRI en ese mismo fotograma; no se reutiliza para coches nuevos. Se omiten snapshots del primer segundo y duplicados de una misma víctima en menos de 0,5 s. No se infieren demos por desapariciones, ni a partir del marcador; participantes desconocidos se etiquetan explícitamente. Requiere volver a subir partidas cargadas antes de incorporar esta lectura.
-- Selector con los últimos ocho informes de la sesión, en memoria, también accesible en móvil.
+- Listado de partidos de la sesión con nombres de equipo, marcador y fecha, también accesible en móvil.
 - Exportación del informe actual a JSON desde la cabecera.
 - Navegación con teclado, estados de carga, mensajes de error y adaptación a móvil.
 - Tabla ampliada debajo de los campos, para todos los jugadores: turbo medio ponderado, segundos y porcentaje sin turbo (≤1 %) y lleno (≥99 %), pads, tiempo aéreo estimado, aproximaciones y posibles fallos con acceso al instante. Las métricas se calculan sobre las muestras originales, nunca sobre la interpolación.
