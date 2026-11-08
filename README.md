@@ -40,38 +40,177 @@ La aplicación arranca vacía, sin partidos ficticios. Arrastra uno o varios arc
 
 El listado **Partidos** permite elegir qué repetición ver. Cada entrada muestra los nombres de equipo guardados en la repetición, el resultado y la fecha; se prioriza `TAGame.Team_TA:CustomTeamName` sobre `Engine.TeamInfo:TeamName`. Si faltan nombres se indica **Azul (sin nombre)** o **Naranja (sin nombre)**, sin inventarlos ni sustituirlos por jugadores. Las entradas están numeradas para distinguir partidos entre los mismos equipos. Se conservan solo en memoria durante esta sesión, sin el límite anterior de ocho; recargar la página vacía el listado.
 
-## Despliegue en un servidor Linux con Docker
+## Instalación con Docker
 
-Requisitos: servidor Linux x64 o ARM64 con Docker y Docker Compose, un dominio con un registro DNS A/AAAA hacia la IP del servidor y los puertos 80 y 443 abiertos. [Caddy](https://caddyserver.com) obtiene y renueva el certificado HTTPS automáticamente.
+### 1. Requisitos
+
+- Docker Engine y el plugin **Docker Compose v2** (`docker compose`, no el antiguo `docker-compose`).
+- Servidor **Linux x64 o ARM64**, incluida Raspberry Pi con sistema de 64 bits. Comprueba la arquitectura con `uname -m`: `x86_64` y `aarch64` son compatibles; ARM de 32 bits no.
+- Conexión a Internet durante la construcción para descargar imágenes y dependencias. El análisis no envía las replays a servicios externos.
+- Memoria suficiente: el contenedor de la aplicación tiene un límite de **3 GB** y **2 CPU** en `compose.yaml`. La compilación puede consumir más memoria; estos límites son de ejecución, no de construcción.
+
+No necesitas instalar Node.js, npm ni Rust en el equipo anfitrión. Docker compila rrrocket 0.11.8 nativamente desde la revisión fija `c2152bdb46dceff779a02c19616b9135d83dd41d`, usando sus dependencias bloqueadas. La primera construcción puede tardar varios minutos, especialmente en Raspberry Pi; las herramientas quedan fuera de la imagen final. No ejecutes `npm run parser:setup` en el anfitrión para este despliegue.
+
+Comprueba Docker:
 
 ```bash
-git clone https://github.com/Riekii/RocketAnalyzer.git rocketanalyzer   # o copia la carpeta
-cd rocketanalyzer
-cp .env.example .env        # edita DOMAIN con tu dominio
-docker compose up -d --build
-docker compose logs -f      # comprobar el arranque
+docker version
+docker compose version
 ```
 
-La imagen compila rrrocket 0.11.8 nativamente para la arquitectura del servidor desde la revisión fija `c2152bdb46dceff779a02c19616b9135d83dd41d`, con sus dependencias bloqueadas. No necesita emulación x64 en Raspberry Pi ni instalar Rust o Node.js en el servidor: las herramientas de compilación quedan en una etapa separada de Docker. La primera compilación puede tardar varios minutos; se usa un solo trabajo de Cargo para reducir el consumo de memoria. En ARM64 no ejecutes `npm run parser:setup`: ese comando descarga binarios que solo se publican para x64.
+Los comandos siguientes asumen que tu usuario puede usar Docker. Si recibes un error de permisos, utiliza `sudo` según la configuración de tu servidor.
 
-La aplicación escucha solo en `127.0.0.1:3000` del servidor, y Caddy publica el sitio en `https://DOMAIN` con un límite de subida de 34 MB y 120 s de tiempo de espera. `PUBLIC_ORIGIN` (definido por `compose.yaml` a partir de `DOMAIN`) es necesario porque el proxy reenvía por HTTP: sin él, las subidas devuelven 403.
+### 2. Descargar el proyecto
 
-### Acceso por IP en la red local (sin HTTPS)
+```bash
+git clone https://github.com/Riekii/RocketAnalyzer.git
+cd RocketAnalyzer
+cp .env.example .env
+```
 
-No necesitas dominio ni certificado. Configura `.env` con la IP local de tu servidor:
+También puedes descargar el ZIP del repositorio, extraerlo y entrar en la carpeta que contiene `compose.yaml`. Ejecuta todos los comandos de Compose desde esa carpeta.
+
+### 3. Elegir cómo acceder
+
+Edita `.env`. `DOMAIN` debe ser únicamente el nombre o la IP, **sin protocolo, puerto ni ruta**. `SCHEME` admite `http` o `https` y usa `https` si se omite.
+
+#### Opción A: red local, sin dominio (HTTP)
+
+Ejemplo: sustituye `192.168.1.50` por la IP de tu servidor:
 
 ```dotenv
-DOMAIN=192.168.1.214
+DOMAIN=192.168.1.50
 SCHEME=http
 ```
 
-Con el archivo `compose.yaml` actualizado, ejecuta `docker compose up -d --no-build` y abre <http://192.168.1.214> (no HTTPS). No hace falta recompilar la imagen existente. Apache u otros servicios no deben ocupar el puerto 80. `SCHEME` usa `https` por defecto si se omite; también determina el origen permitido para las subidas. Usa HTTP solo en una red local de confianza.
+En el servicio `caddy` de `compose.yaml`, deja solo el puerto HTTP:
 
-- **Actualizar:** `git pull` y `docker compose up -d --build`.
-- **Contraseña:** descomenta `basic_auth` en `Caddyfile`, genera el hash con `docker compose run --rm caddy caddy hash-password` y ejecuta `docker compose restart caddy`.
-- **Si ya usas Nginx en 80/443:** arranca solo `docker compose up -d --build app` y apunta Nginx a `http://127.0.0.1:3000` con `client_max_body_size 34m;` y `proxy_read_timeout 120s;`.
+```yaml
+    ports:
+      - "80:80"
+```
 
-Se analiza una repetición a la vez por contenedor; las demás reciben 429 hasta que termine.
+Elimina las líneas `"443:443"` y `"443:443/udp"` de ese servicio; no cambies el puerto de `app`. Abre después **`http://192.168.1.50/`**, no HTTPS. Permite TCP 80 en el cortafuegos del servidor. Usa HTTP solo en una red de confianza; no necesitas abrir puertos en el router para acceso local.
+
+#### Opción B: dominio público con HTTPS
+
+```dotenv
+DOMAIN=replays.tudominio.com
+SCHEME=https
+```
+
+- Configura el DNS A hacia la IP pública del servidor; añade AAAA solo si IPv6 llega correctamente al mismo equipo.
+- Mantén los puertos de Caddy del archivo original: TCP 80, TCP 443 y UDP 443 (este último para HTTP/3).
+- Permite TCP 80/443 en el cortafuegos. Si el servidor está detrás de un router, reenvíalos al servidor; con CGNAT el reenvío público puede no ser posible.
+- [Caddy](https://caddyserver.com) obtiene y renueva el certificado automáticamente. Accede a **`https://replays.tudominio.com/`**.
+- Antes de exponerlo a Internet, configura contraseña y límites de acceso: el comprobador de origen no sustituye autenticación ni cuotas.
+
+#### Opción C: Tailscale
+
+Instala y conecta Tailscale en el servidor y en el dispositivo desde el que navegarás. Consulta el nombre y la IP del servidor:
+
+```bash
+tailscale status
+tailscale ip -4
+```
+
+Usa el nombre completo de MagicDNS si está activado, o la IP de Tailscale:
+
+```dotenv
+DOMAIN=mi-servidor.mi-red.ts.net
+SCHEME=http
+```
+
+Configura los puertos de Caddy como en la opción A y abre **`http://mi-servidor.mi-red.ts.net/`** desde tu red Tailscale. Esta modalidad no necesita certificado ni puertos públicos en el router. Si usas una IP `100.x.x.x`, pon exactamente esa IP en `DOMAIN`. Caddy espera el destino configurado: entrar por otra IP o nombre puede mostrar una página vacía.
+
+Este ejemplo no configura Tailscale Serve ni Funnel. Si ya los tienes activos, revisa `tailscale serve status` para evitar acceder a otro servicio.
+
+### 4. Construir y arrancar
+
+Con `.env` y los puertos configurados:
+
+```bash
+docker compose up -d --build
+docker compose ps -a
+docker compose logs --tail=50 app caddy
+```
+
+Debes ver **app** en estado `healthy` y **caddy** en ejecución. El nombre completo de los contenedores depende de la carpeta; los comandos por servicio evitan depender de él.
+
+La aplicación publica `127.0.0.1:3000` **solo en el servidor**. Caddy recibe las conexiones de otros dispositivos y las reenvía a `app:3000`. No intentes acceder a `IP_DEL_SERVIDOR:3000` desde otro equipo. Caddy limita el cuerpo de subida a 34 MB y utiliza 120 s de espera; cada replay admite hasta 32 MiB. Se analiza una repetición a la vez por contenedor.
+
+`PUBLIC_ORIGIN` se calcula automáticamente con `SCHEME` y `DOMAIN`, para permitir subidas detrás del proxy. Si cambias `.env`, aplica el cambio con `docker compose up -d`; `restart` por sí solo no actualiza variables de entorno.
+
+### 5. Mantenimiento
+
+```bash
+# Estado y registros en directo (Ctrl+C solo sale de los registros)
+docker compose ps -a
+docker compose logs -f app caddy
+
+# Reiniciar un servicio
+docker compose restart app
+docker compose restart caddy
+
+# Actualizar código e imagen (si descargaste el ZIP, copia primero los cambios)
+git pull
+docker compose up -d --build
+
+# Recrear contenedores con la imagen ya construida, sin recompilar
+docker compose up -d --no-build --force-recreate
+
+# Parar y eliminar los contenedores del proyecto, conservando imágenes y volúmenes
+docker compose down
+```
+
+Ambos servicios usan `restart: unless-stopped`. En Linux con systemd, activa Docker al iniciar:
+
+```bash
+sudo systemctl enable --now docker
+```
+
+Los contenedores arrancarán tras reiniciar el equipo si estaban en ejecución. Si los detienes manualmente o ejecutas `down`, vuelve a iniciarlos con `docker compose up -d`. Los volúmenes de Caddy conservan sus certificados; no contienen un historial de replays. Los partidos cargados siguen siendo temporales en el navegador.
+
+### Contraseña y proxy existente
+
+Para añadir contraseña, genera un hash:
+
+```bash
+docker compose run --rm --no-deps caddy caddy hash-password
+```
+
+Descomenta el bloque `basic_auth` en `Caddyfile`, sustituye `usuario` y `HASH_GENERADO` por tu usuario y el hash, y ejecuta `docker compose restart caddy`. No guardes la contraseña en texto claro.
+
+Si Apache, Nginx u otro contenedor ya utiliza 80/443, no lo detengas sin comprobar qué webs sirve. Puedes configurar ese proxy para este sitio y arrancar **solo la app**:
+
+```bash
+docker compose up -d --build app
+```
+
+El proxy debe apuntar a `http://127.0.0.1:3000` si se ejecuta en el anfitrión. En Nginx configura al menos `client_max_body_size 34m;` y `proxy_read_timeout 120s;`. Mantén en `.env` el origen exacto con el que los usuarios acceden. Si el proxy está en otro contenedor, `127.0.0.1` es ese contenedor, no el anfitrión: necesita una red Docker compartida y acceso a `app:3000`.
+
+### Solución de problemas
+
+| Problema | Comprobación |
+|---|---|
+| `address already in use` en 80/443 | Ejecuta `sudo ss -ltnp` y `docker ps` para identificar el servicio. Para HTTP local elimina las publicaciones del 443; no borres ni detengas servicios ajenos a ciegas. |
+| Conexión rechazada | Comprueba `docker compose ps -a`: Caddy debe estar arrancado y publicar el puerto 80/443 correspondiente. Revisa protocolo, IP, cortafuegos y acceso a Tailscale. |
+| Página vacía o JSON `{"detail":"Not Found"}` | Comprueba que la URL coincide con `docker compose exec caddy printenv DOMAIN`. Ese JSON puede proceder de otro servicio; comprueba también DNS y Tailscale Serve. |
+| Error 403 al subir | Revisa `DOMAIN` y `SCHEME`, y ejecuta `docker compose up -d` para aplicar las variables. La URL del navegador debe coincidir con el origen configurado. |
+| Fallo durante la construcción | Ejecuta `docker compose --progress=plain build app` y busca el primer error anterior a `failed to solve`. Si indica falta de memoria, revisa `free -h`; en ARM64 utiliza el Dockerfile actual que compila el lector nativamente. |
+| Cambios de código que no aparecen | Reconstruye con `docker compose up -d --build` y recarga el navegador con Ctrl+F5. |
+
+Para comprobar la aplicación sin pasar por Caddy, ejecuta **en el servidor**:
+
+```bash
+curl -I http://127.0.0.1:3000/
+```
+
+Un `200 OK` confirma que la aplicación responde localmente, pero no verifica el acceso desde otro dispositivo. Para probar el proxy HTTP con el destino correcto, sustituye el nombre del siguiente comando por tu `DOMAIN`:
+
+```bash
+curl -I -H 'Host: mi-servidor.mi-red.ts.net' http://127.0.0.1/
+```
 
 ## Encontrar tus repeticiones
 
