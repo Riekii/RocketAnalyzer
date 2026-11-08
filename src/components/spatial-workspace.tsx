@@ -128,7 +128,7 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
         <div className="player-heatmaps" aria-label="Mapas de calor de todos los jugadores">
           {replay.players.map((player, number) => <button key={player.id} className={`mini-heat ${selectedId === player.id ? "selected" : ""}`} onClick={() => onSelect(player.id)} aria-pressed={selectedId === player.id}>
             <span><i style={{ background: TEAM_COLORS[player.team] }}>{number + 1}</i>{player.name}</span>
-            {analysis.players[player.id].trackedSeconds > 0 && replay.telemetry.standardField ? <FieldMap replay={replay} heat={analysis.heatmaps[player.id]} selectedId={player.id} small /> : <span className="no-mini">{replay.telemetry.standardField ? "Sin posiciones" : "Mapa no disponible"}</span>}
+            {analysis.players[player.id].trackedSeconds > 0 ? <FieldMap replay={replay} heat={analysis.heatmaps[player.id]} selectedId={player.id} small /> : <span className="no-mini">Sin posiciones</span>}
           </button>)}
         </div>
         <div className="spatial-statistics">
@@ -161,14 +161,15 @@ export function SpatialWorkspace({ replay, analysis, selectedId, onSelect, loadi
         <div className="fields-grid">
           <div className="field-box">
             <h3>Posiciones · {samples.length ? `${formatTime(time)}.${Math.floor(time % 1 * 10)}` : "N/D"}</h3>
-            {sample?.players.length && replay.telemetry.standardField ? <FieldMap replay={replay} sample={sample} selectedId={selectedId} pickups={replay.telemetry.pickups} onSelect={onSelect} />
-              : <div className="no-field">{!replay.telemetry.standardField && samples.length ? "Geometría de campo no verificada." : "Sin posiciones en este instante."}<br />No se inventan posiciones.</div>}
+            {sample?.players.length ? <FieldMap replay={replay} sample={sample} selectedId={selectedId} pickups={replay.telemetry.pickups} onSelect={onSelect} />
+              : <div className="no-field">Sin posiciones en este instante.<br />No se inventan posiciones.</div>}
           </div>
           <div className="field-box">
             <div className="heat-heading"><h3>Calor · {selected.name}</h3><select value={heatScope} aria-label="Intervalo del mapa de calor" onChange={(event) => setHeatScope(event.target.value === "recent" ? "recent" : "match")}><option value="match">Toda la partida</option><option value="recent">Últimos 10 s</option></select></div>
-            {stats.trackedSeconds > 0 && replay.telemetry.standardField ? <FieldMap replay={replay} heat={currentHeat} selectedId={selectedId} /> : <div className="no-field">No hay mapa de calor disponible.</div>}
+            {stats.trackedSeconds > 0 ? <FieldMap replay={replay} heat={currentHeat} selectedId={selectedId} /> : <div className="no-field">No hay mapa de calor disponible.</div>}
           </div>
         </div>
+        {!replay.telemetry.standardField && <p className="note reference-field-note">Campo de referencia: geometría de {replay.map} no verificada. Posiciones reales; el perímetro y el calor pueden no coincidir con el estadio. Pads y valoración táctica desactivados.</p>}
         <div className="playback">
           <button className="button" disabled={!samples.length} aria-label={playing ? "Pausar" : "Reproducir posiciones"} onClick={togglePlayback}>{playing ? "Pausa" : "Reproducir"}</button>
           <div className="playback-timeline">

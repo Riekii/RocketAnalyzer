@@ -199,6 +199,7 @@ tbody tr:last-child > * { border-bottom: 0; }
 .replay-3d canvas:active { cursor: grabbing; }
 .replay-3d-message { position: absolute; inset: 0; display: grid; place-content: center; padding: 20px; text-align: center; pointer-events: none; }
 .replay-3d-note { padding: 0 14px 12px; }
+.reference-field-note { padding: 6px 14px; }
 .replay-3d .playback { flex-wrap: wrap; }
 .replay-3d .playback input { flex: 1 1 120px; }
 .detail-notes { padding: 10px 14px; border-top: 1px solid var(--border); }

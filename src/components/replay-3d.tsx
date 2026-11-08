@@ -13,7 +13,6 @@ function drawScene(context: CanvasRenderingContext2D, width: number, height: num
   context.clearRect(0, 0, width, height);
   context.fillStyle = "#0b1220";
   context.fillRect(0, 0, width, height);
-  if (!replay.telemetry.standardField) return;
   const project = (point: Position) => projectPosition(point, camera, width, height);
   const polygon = (points: Position[], fill: string, stroke = "#738fa0") => {
     const projected = points.map(project);
@@ -68,7 +67,7 @@ function drawScene(context: CanvasRenderingContext2D, width: number, height: num
     line([{ x: -893, y: goalY, z: 642 }, { x: -893, y: backY, z: 642 },
       { x: 893, y: backY, z: 642 }, { x: 893, y: goalY, z: 642 }], TEAM_COLORS[side]);
   }
-  for (const pad of BOOST_PADS) {
+  for (const pad of replay.telemetry.standardField ? BOOST_PADS : []) {
     const point = project(pad);
     if (!point) continue;
     context.beginPath();
@@ -97,14 +96,22 @@ function drawScene(context: CanvasRenderingContext2D, width: number, height: num
     const center = project(point);
     if (!center) continue;
     if (ball) {
+      const radius = Math.max(5, 93 * center.scale);
+      const silver = context.createRadialGradient(center.x - radius * .35, center.y - radius * .4,
+        radius * .05, center.x, center.y, radius);
+      silver.addColorStop(0, "#ffffff");
+      silver.addColorStop(.25, "#edf3fa");
+      silver.addColorStop(.55, "#b8c4d3");
+      silver.addColorStop(.8, "#6a798c");
+      silver.addColorStop(1, "#d8e4f2");
       context.beginPath();
-      context.arc(center.x, center.y, Math.max(5, 93 * center.scale), 0, Math.PI * 2);
-      context.fillStyle = "#fffef0";
-      context.shadowColor = "#fff16a";
+      context.arc(center.x, center.y, radius, 0, Math.PI * 2);
+      context.fillStyle = silver;
+      context.shadowColor = "#d5eaff";
       context.shadowBlur = 16;
       context.fill();
       context.shadowBlur = 0;
-      context.strokeStyle = "#fff16a";
+      context.strokeStyle = "#eaf4ff";
       context.lineWidth = 2;
       context.stroke();
       continue;
@@ -112,6 +119,21 @@ function drawScene(context: CanvasRenderingContext2D, width: number, height: num
     if (!player) continue;
     const rotation = sample?.players.find((car) => car.id === player.id)?.rotation;
     const transform = (local: Position) => carPoint(local, point, rotation);
+    if (rotation && sample?.players.find((car) => car.id === player.id)?.boosting === true) {
+      const exhaust = project(transform({ x: -115, y: 0, z: 15 }));
+      const tail = project(transform({ x: -350, y: 0, z: 15 }));
+      if (exhaust && tail) {
+        context.save();
+        context.shadowColor = "#55ff9b";
+        context.shadowBlur = 18;
+        line([transform({ x: -110, y: 0, z: 15 }), transform({ x: -350, y: 0, z: 15 })], "#55ff9bb3", 6);
+        context.beginPath();
+        context.arc(exhaust.x, exhaust.y, Math.max(3, 40 * exhaust.scale), 0, Math.PI * 2);
+        context.fillStyle = "#c4ffdf";
+        context.fill();
+        context.restore();
+      }
+    }
     const parts = [
       { min: [-100, -48, -5], max: [100, 48, 32], color: TEAM_COLORS[player.team] },
       { min: [-50, -39, 32], max: [35, 39, 65], color: "#a4def0" },
@@ -144,11 +166,24 @@ function drawScene(context: CanvasRenderingContext2D, width: number, height: num
       context.fillStyle = TEAM_COLORS[player.team];
       context.fillText(player.name, label.x, label.y);
       const boost = sample?.players.find((car) => car.id === player.id)?.boost;
-      const boostLabel = boost === null || boost === undefined ? "Boost N/D" : `Boost ${boost} %`;
-      context.font = "600 11px Segoe UI, sans-serif";
-      context.strokeText(boostLabel, label.x, label.y - 15);
-      context.fillStyle = "#fff3ac";
-      context.fillText(boostLabel, label.x, label.y - 15);
+      const known = boost !== null && boost !== undefined && Number.isFinite(boost);
+      context.save();
+      context.globalAlpha = .65;
+      context.fillStyle = "#172130";
+      context.fillRect(label.x - 29, label.y - 22, 58, 7);
+      if (known) {
+        context.fillStyle = TEAM_COLORS[player.team];
+        context.fillRect(label.x - 29, label.y - 22, 58 * Math.max(0, Math.min(100, boost)) / 100, 7);
+      }
+      context.strokeStyle = "#e0eaff";
+      context.lineWidth = 1;
+      context.strokeRect(label.x - 29, label.y - 22, 58, 7);
+      context.restore();
+      if (!known) {
+        context.font = "10px Segoe UI, sans-serif";
+        context.fillStyle = "#dce6f3";
+        context.fillText("N/D", label.x, label.y - 26);
+      }
     }
   }
 }
@@ -225,7 +260,7 @@ export function Replay3D({ replay, sample, selectedId, time, playing, speed, onS
       return () => cancelAnimationFrame(frame);
     }
   }, [size, camera, replay, sample, selectedId, onReady]);
-  const available = replay.telemetry.standardField && replay.telemetry.samples.length > 0;
+  const available = replay.telemetry.samples.some((sample) => sample.players.length > 0);
   const selected = sample?.players.find((point) => point.id === selectedId);
   const startTime = replay.telemetry.samples[0]?.time ?? 0;
   const endTime = replay.telemetry.samples.at(-1)?.time ?? 0;
@@ -268,10 +303,11 @@ export function Replay3D({ replay, sample, selectedId, time, playing, speed, onS
         Tu navegador no admite la vista 3D.
       </canvas>
       {(error || !available || !sample?.players.length) && <p className="replay-3d-message" role="status">
-        {error || (!available ? "Vista 3D no disponible: faltan posiciones o la geometría del mapa no está verificada."
+        {error || (!available ? "Vista 3D no disponible: faltan posiciones."
           : "Sin posiciones en este instante.")}
       </p>}
     </div>
+    {!replay.telemetry.standardField && <p className="note replay-3d-note">Campo de referencia: geometría de {replay.map} no verificada. Se muestran posiciones reales, sin pads; el estadio dibujado puede no coincidir con el original.</p>}
     <div className="playback">
       <button className="button" disabled={!available} onClick={onToggle}>{playing ? "Pausa" : "Reproducir"}</button>
       <div className="playback-timeline">

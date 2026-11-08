@@ -28,6 +28,7 @@ const objects = [
   "Engine.TeamInfo:TeamName",
   "TAGame.Team_TA:CustomTeamName",
   "Engine.TeamInfo:TeamIndex",
+  "TAGame.CarComponent_TA:ReplicatedActive",
 ];
 function update(id: number, property: string, attribute: Record<string, unknown>) {
   return { actor_id: id, object_id: objects.indexOf(property), attribute };
@@ -154,6 +155,26 @@ test("una subida de turbo no se inventa como recogida de pad", () => {
   const telemetry = extractTelemetry(raw, demoReplay.players, "cs_p");
   assert.equal(telemetry.pickups.length, 0);
   assert.equal(telemetry.samples[15].players[0].boost, 100);
+});
+
+test("el uso de turbo sigue el estado replicado del componente, no la bajada del nivel", () => {
+  const raw = fixture();
+  raw.network_frames.frames[0].updated_actors.push(
+    update(30, "TAGame.CarComponent_TA:ReplicatedActive", { Byte: 3 }),
+    update(31, "TAGame.CarComponent_TA:ReplicatedActive", { Byte: 2 }),
+    update(20, "TAGame.CarComponent_TA:ReplicatedActive", { Byte: 1 }),
+  );
+  raw.network_frames.frames[1].updated_actors.push(
+    update(30, "TAGame.CarComponent_TA:ReplicatedActive", { Byte: 4 }),
+  );
+  const telemetry = extractTelemetry(raw, demoReplay.players, "Unknown_P");
+  assert.equal(telemetry.samples[0].players[0].boosting, true);
+  assert.equal(telemetry.samples[0].players[1].boosting, false);
+  assert.equal(telemetry.samples[1].players[0].boosting, false);
+  assert.equal(telemetry.samples[0].players[2].boosting, undefined);
+  assert.equal(telemetry.standardField, false);
+  assert.ok(telemetry.samples[0].ball);
+  assert.equal(telemetry.samples[0].players.length, 4);
 });
 
 test("soporta eventos de recogida antiguos y no clasifica un pad demasiado lejano", () => {

@@ -18,6 +18,7 @@ interface Actor {
   positionTime?: number;
   sleeping?: boolean;
   boost?: number;
+  boosting?: boolean;
   pickupState?: string;
   ballTouches?: number;
 }
@@ -127,7 +128,7 @@ export function extractTelemetry(raw: unknown, players: Player[], map: string): 
           lastDemolition.delete(id);
           actors.delete(id);
           for (const actor of actors.values()) {
-            if (actor.vehicle === id) { actor.vehicle = undefined; actor.boost = undefined; }
+            if (actor.vehicle === id) { actor.vehicle = undefined; actor.boost = undefined; actor.boosting = undefined; }
             if (actor.pri === id) actor.pri = undefined;
             if (actor.teamActor === id) actor.teamActor = undefined;
           }
@@ -160,6 +161,12 @@ export function extractTelemetry(raw: unknown, players: Player[], map: string): 
         const actor = id === null ? undefined : actors.get(id);
         if (!row || !actor || !attr || id === null) continue;
         const property = objectName(row.object_id);
+        if (property === "TAGame.CarComponent_TA:ReplicatedActive" && /CarComponent_Boost/.test(actor.kind)) {
+          const value = attr.Byte;
+          if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 255) {
+            actor.boosting = (value & 1) === 1;
+          } else warnings.add("Estado de uso de turbo no reconocido; algunos efectos pueden faltar.");
+        }
         if (property === "Engine.TeamInfo:TeamName" && typeof attr.String === "string") {
           actor.teamName = attr.String.trim() || undefined;
         }
@@ -273,9 +280,11 @@ export function extractTelemetry(raw: unknown, players: Player[], map: string): 
     const ambiguous = new Set<string>();
     let ball: Position | null = null;
     const boosts = new Map<number, number>();
+    const boosting = new Map<number, boolean>();
     for (const actor of actors.values()) {
-      if (/CarComponent_Boost/.test(actor.kind) && actor.vehicle !== undefined && actor.boost !== undefined) {
-        boosts.set(actor.vehicle, actor.boost);
+      if (/CarComponent_Boost/.test(actor.kind) && actor.vehicle !== undefined) {
+        if (actor.boost !== undefined) boosts.set(actor.vehicle, actor.boost);
+        if (actor.boosting !== undefined) boosting.set(actor.vehicle, actor.boosting);
       }
     }
     for (const [id, actor] of actors) {
@@ -292,6 +301,7 @@ export function extractTelemetry(raw: unknown, players: Player[], map: string): 
       }
       const touches = actor.pri === undefined ? undefined : actors.get(actor.pri)?.ballTouches;
       samples.push({ id: player.id, ...actor.position, boost: boosts.get(id) ?? null,
+        ...(boosting.has(id) ? { boosting: boosting.get(id) } : {}),
         ...(actor.rotation ? { rotation: actor.rotation } : {}),
         ...(touches === undefined ? {} : { ballTouches: touches }) });
     }

@@ -2,7 +2,7 @@ import type { Player, Replay, Team } from "./replay.ts";
 
 export interface Position { x: number; y: number; z: number }
 export interface Rotation { x: number; y: number; z: number; w: number }
-export interface PlayerPosition extends Position { id: string; boost: number | null; ballTouches?: number; rotation?: Rotation }
+export interface PlayerPosition extends Position { id: string; boost: number | null; ballTouches?: number; rotation?: Rotation; boosting?: boolean }
 export interface PositionSample {
   time: number;
   active: boolean | null;
